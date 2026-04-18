@@ -1,0 +1,217 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  USER
+  ADMIN
+  FLEET
+}
+
+enum RouteDirection {
+  OUTBOUND
+  INBOUND
+}
+
+enum DriverStatus {
+  ACTIVE
+  ON_LEAVE
+  INACTIVE
+}
+
+enum BusServiceStatus {
+  AVAILABLE
+  IN_SERVICE
+  MAINTENANCE
+  OUT_OF_SERVICE
+}
+
+enum ShiftStatus {
+  SCHEDULED
+  ACTIVE
+  COMPLETED
+  MISSED
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  name         String?
+  role         UserRole @default(USER)
+  passwordHash String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  favoriteStops  FavoriteStop[]
+  subscriptions  NotificationSubscription[]
+}
+
+model BusStop {
+  id        String   @id @default(uuid())
+  code      String   @unique // e.g., "STOP_001"
+  name      String
+  latitude  Float
+  longitude Float
+  landmark  String?
+  areaDescription String?
+  isMajorStop Boolean @default(false)
+  isInterchange Boolean @default(false)
+  zone String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  stopRoutes     StopRoute[]
+  favoritedBy    FavoriteStop[]
+  subscriptions  NotificationSubscription[]
+  etaPredictions EtaPrediction[]
+}
+
+model Route {
+  id                    String   @id @default(uuid())
+  shortName             String // e.g., "55", "M15"
+  longName              String? // e.g., "Downtown via 5th Ave"
+  color                 String? // hex code for UI
+  origin                String?
+  destination           String?
+  outboundDirection     String?
+  inboundDirection      String?
+  firstBusTime          String?
+  lastBusTime           String?
+  averageHeadwayMinutes Int?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  buses          Bus[]
+  driverShifts   DriverShift[]
+  stopRoutes     StopRoute[]
+  subscriptions  NotificationSubscription[]
+  etaPredictions EtaPrediction[]
+}
+
+model Driver {
+  id                    String       @id @default(uuid())
+  employeeCode          String       @unique
+  fullName              String
+  phoneNumber           String?
+  licenseNumber         String       @unique
+  licenseExpiryDate     DateTime?
+  emergencyContactName  String?
+  emergencyContactPhone String?
+  depotName             String?
+  status                DriverStatus @default(ACTIVE)
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
+
+  buses Bus[]
+  shifts DriverShift[]
+}
+
+model Bus {
+  id            String           @id @default(uuid())
+  vehicleNumber String           @unique
+  licensePlate  String           @unique
+  capacity      Int
+  routeId       String?
+  driverId      String?
+  serviceStatus BusServiceStatus @default(AVAILABLE)
+  depotName     String?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  route          Route?                     @relation(fields: [routeId], references: [id])
+  driver         Driver?                    @relation(fields: [driverId], references: [id])
+  shifts         DriverShift[]
+  subscriptions  NotificationSubscription[]
+  etaPredictions EtaPrediction[]
+}
+
+model DriverShift {
+  id              String        @id @default(uuid())
+  driverId        String
+  busId           String
+  routeId         String
+  direction       RouteDirection
+  shiftStartAt    DateTime
+  shiftEndAt      DateTime
+  checkInAt       DateTime?
+  checkOutAt      DateTime?
+  status          ShiftStatus   @default(SCHEDULED)
+  notes           String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  driver Driver @relation(fields: [driverId], references: [id])
+  bus    Bus    @relation(fields: [busId], references: [id])
+  route  Route  @relation(fields: [routeId], references: [id])
+
+  @@index([driverId, shiftStartAt])
+  @@index([busId, shiftStartAt])
+  @@index([routeId, shiftStartAt])
+}
+
+model StopRoute {
+  id        String   @id @default(uuid())
+  stopId    String
+  routeId   String
+  direction RouteDirection
+  sequence  Int // The order of the stop on this route
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  stop  BusStop @relation(fields: [stopId], references: [id])
+  route Route   @relation(fields: [routeId], references: [id])
+
+  @@unique([stopId, routeId, direction])
+}
+
+model FavoriteStop {
+  id        String   @id @default(uuid())
+  userId    String
+  stopId    String
+  createdAt DateTime @default(now())
+
+  user User    @relation(fields: [userId], references: [id])
+  stop BusStop @relation(fields: [stopId], references: [id])
+
+  @@unique([userId, stopId])
+}
+
+model NotificationSubscription {
+  id              String   @id @default(uuid())
+  userId          String
+  routeId         String
+  stopId          String
+  busId           String? // Optional: If they want to track a specific bus
+  leadTimeMinutes Int // e.g., notify me 5 mins before arrival
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user  User    @relation(fields: [userId], references: [id])
+  route Route   @relation(fields: [routeId], references: [id])
+  stop  BusStop @relation(fields: [stopId], references: [id])
+  bus   Bus?    @relation(fields: [busId], references: [id])
+
+  @@unique([userId, routeId, stopId])
+}
+
+model EtaPrediction {
+  id                   String   @id @default(uuid())
+  busId                String
+  routeId              String
+  stopId               String
+  predictedArrivalTime DateTime // Exact predicted time of arrival
+  distanceMeters       Int? // How far the bus is currently from the stop
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  bus   Bus     @relation(fields: [busId], references: [id])
+  route Route   @relation(fields: [routeId], references: [id])
+  stop  BusStop @relation(fields: [stopId], references: [id])
+
+  @@unique([busId, routeId, stopId]) // Ensures we just update the latest ETA for a specific bus-route-stop combo
+}

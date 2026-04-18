@@ -1,0 +1,21 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: #F9FAFB;
+    --foreground: #111827;
+  }
+}
+
+@layer base {
+  html, body {
+    @apply w-full h-full p-0 m-0 overflow-x-hidden;
+    /* Removed the mockup wrapper styles */
+  }
+  
+  body {
+    @apply bg-[var(--background)] text-[var(--foreground)] antialiased;
+  }
+}
