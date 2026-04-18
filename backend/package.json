@@ -26,6 +26,7 @@
     "typescript": "^5.9.3"
   },
   "dependencies": {
+    "@google/genai": "^1.50.1",
     "@nestjs/common": "^11.1.19",
     "@nestjs/core": "^11.1.19",
     "@nestjs/mapped-types": "^2.1.1",

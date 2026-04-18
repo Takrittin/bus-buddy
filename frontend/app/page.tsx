@@ -14,6 +14,7 @@ import { MapView } from "@/components/map/MapView";
 import { StopCard } from "@/components/stops/StopCard";
 import { StopDetailSheet } from "@/components/stops/StopDetailSheet";
 import { BusDetailSheet } from "@/components/buses/BusDetailSheet";
+import { UserAssistantPanel } from "@/components/ai/UserAssistantPanel";
 import { StopCardSkeleton } from "@/components/ui/LoadingSkeleton";
 import { useStops } from "@/hooks/useStops";
 import { useLiveBuses } from "@/hooks/useLiveBuses";
@@ -356,6 +357,12 @@ export default function HomePage() {
               onClose={() => setSelectedBusId(null)}
             />
           )}
+
+          <UserAssistantPanel
+            userLocation={userLocation}
+            selectedStop={selectedStop}
+            selectedRouteIds={selectedRouteIds}
+          />
 
         </div>
       </div>
