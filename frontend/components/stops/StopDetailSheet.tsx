@@ -18,6 +18,7 @@ import {
   findSubscription,
   removeSubscription,
 } from "@/services/notifications";
+import { useLanguage } from "@/lib/i18n/LanguageContext";
 
 interface StopDetailSheetProps {
   stop: Stop;
@@ -25,6 +26,7 @@ interface StopDetailSheetProps {
 }
 
 export function StopDetailSheet({ stop, onClose }: StopDetailSheetProps) {
+  const { t, locale } = useLanguage();
   const { etas, isLoading, error } = useETA(stop.id);
   const router = useRouter();
   const { user, isAuthenticated, canUseRiderTools, isFleetManager } = useAuth();
@@ -185,14 +187,14 @@ export function StopDetailSheet({ stop, onClose }: StopDetailSheetProps) {
                 size="icon"
                 onClick={handleOpenDirections}
                 className="h-10 w-10 flex-shrink-0 rounded-full bg-orange-50 text-brand hover:bg-orange-100"
-                aria-label={`Open directions to ${stop.name} in Google Maps`}
-                title={`Directions to ${stop.name}`}
+                aria-label={t("stop.openDirections", { name: stop.name })}
+                title={t("stop.openDirections", { name: stop.name })}
               >
                 <Navigation className="h-4 w-4" />
               </Button>
             </div>
             <p className="text-sm text-brand font-medium mt-1">
-              {stop.landmark ?? "Live Arrivals"}
+              {stop.landmark ?? t("stop.liveArrivals")}
             </p>
             {stop.areaDescription && (
               <p className="text-xs text-gray-500 mt-2 max-w-[260px] leading-5">
@@ -218,7 +220,7 @@ export function StopDetailSheet({ stop, onClose }: StopDetailSheetProps) {
             </div>
           ) : etas.length === 0 ? (
             <div className="flex h-full items-center justify-center text-center text-gray-500 py-8">
-               No buses arriving soon.
+               {t("stop.noBusesSoon")}
             </div>
           ) : (
             <div className="space-y-3">
@@ -229,13 +231,13 @@ export function StopDetailSheet({ stop, onClose }: StopDetailSheetProps) {
                       {eta.routeNumber ?? eta.routeId}
                     </div>
                     <div>
-                      <p className="font-semibold text-gray-900 border-b border-transparent pb-[2px]">Arriving in</p>
+                      <p className="font-semibold text-gray-900 border-b border-transparent pb-[2px]">{t("stop.arrivingIn")}</p>
                       <div className="flex items-center text-xs text-gray-500 mt-1">
                          <Clock className="w-3.5 h-3.5 mr-1.5" />
-                         {new Date(eta.estimatedArrivalDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                         {new Date(eta.estimatedArrivalDate).toLocaleTimeString(locale === "th" ? "th-TH" : "en-US", { hour: '2-digit', minute: '2-digit' })}
                       </div>
                       <p className="text-xs text-gray-500 mt-1">
-                        Plate {eta.licensePlate ?? eta.vehicleNumber ?? eta.busId}
+                        {t("stop.plate", { value: eta.licensePlate ?? eta.vehicleNumber ?? eta.busId })}
                       </p>
                       <p className="text-xs text-gray-500 mt-1">
                         {(eta.direction ?? "outbound").replace("_", " ")} • {eta.trafficLevel ?? "moderate"} traffic
@@ -244,7 +246,7 @@ export function StopDetailSheet({ stop, onClose }: StopDetailSheetProps) {
                   </div>
                   <div className="text-right pl-4">
                     <span className="text-3xl font-black text-brand tracking-tighter">{eta.minutes}</span>
-                    <span className="text-sm font-bold text-brand ml-1 drop-shadow-sm">min</span>
+                    <span className="text-sm font-bold text-brand ml-1 drop-shadow-sm">{locale === "th" ? "นาที" : "min"}</span>
                   </div>
                 </div>
               ))}
@@ -255,12 +257,12 @@ export function StopDetailSheet({ stop, onClose }: StopDetailSheetProps) {
         <div className="mt-6 space-y-3 border-t border-gray-50 pt-4">
           {!isAuthenticated ? (
             <p className="text-xs text-gray-500">
-              Sign in from Settings to save favorite stops and enable alerts.
+              {t("stop.signInHint")}
             </p>
           ) : isFleetManager ? (
             <div className="space-y-3">
               <p className="text-xs text-gray-500">
-                Fleet Manager accounts focus on live operations, so rider favorites and arrival alerts are hidden for this role.
+                {t("stop.fleetHint")}
               </p>
               <Button
                 className="h-14 w-full text-sm font-semibold shadow-lg shadow-brand/20 bg-brand hover:bg-brand-dark"
@@ -268,7 +270,7 @@ export function StopDetailSheet({ stop, onClose }: StopDetailSheetProps) {
                 onClick={() => router.push("/fleet")}
               >
                 <BusFront className="mr-2 h-4 w-4" />
-                Open Fleet Manager
+                {t("common.openFleetManager")}
               </Button>
             </div>
           ) : (
@@ -280,7 +282,7 @@ export function StopDetailSheet({ stop, onClose }: StopDetailSheetProps) {
                 onClick={() => void handleFavoriteToggle()}
               >
                 <Heart className="mr-2 h-4 w-4" />
-                {isFavorite ? "Saved" : "Save Stop"}
+                {isFavorite ? t("stop.saved") : t("stop.saveStop")}
               </Button>
 
               <Button
@@ -291,7 +293,7 @@ export function StopDetailSheet({ stop, onClose }: StopDetailSheetProps) {
                 onClick={() => void handleAlertToggle()}
               >
                 <Bell className="mr-2 h-4 w-4" />
-                {activeSubscriptionId ? "Alert On" : "Notify"}
+                {activeSubscriptionId ? t("stop.alertOn") : t("stop.notify")}
               </Button>
             </div>
           )}

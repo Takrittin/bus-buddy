@@ -7,6 +7,7 @@ import { BottomNav } from "@/components/navigation/BottomNav";
 import { Button } from "@/components/ui/Button";
 import { useAuth } from "@/hooks/auth/useAuth";
 import { canAccessFleet, formatUserRole } from "@/lib/auth/roles";
+import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { UserRole } from "@/types/auth";
 import { BusFront, LogIn, LogOut, Settings, Shield, UserPlus } from "lucide-react";
 
@@ -25,7 +26,8 @@ export default function SettingsPage() {
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { user, isAuthenticated, isLoading, login, logout, register } = useAuth();
-  const roleLabel = formatUserRole(user?.role);
+  const { locale, setLocale, t } = useLanguage();
+  const roleLabel = formatUserRole(user?.role, locale);
   const showFleetShortcut = canAccessFleet(user?.role);
 
   useEffect(() => {
@@ -58,10 +60,10 @@ export default function SettingsPage() {
 
       resetForm();
     } catch (submitError) {
-      setError(
-        submitError instanceof Error
-          ? submitError.message
-          : "Unable to complete authentication.",
+        setError(
+          submitError instanceof Error
+            ? submitError.message
+            : t("settings.loginError"),
       );
     } finally {
       setIsSubmitting(false);
@@ -83,25 +85,55 @@ export default function SettingsPage() {
                   <Settings className="h-6 w-6" />
                 </div>
                 <div>
-                  <h2 className="text-2xl font-bold text-gray-900">Settings</h2>
+                  <h2 className="text-2xl font-bold text-gray-900">{t("settings.title")}</h2>
                   <p className="mt-1 text-sm text-gray-500">
-                    Guests can browse the app, but favorites and alerts need an account.
+                    {t("settings.guestNotice")}
                   </p>
                 </div>
               </div>
             </section>
 
             <section className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
+              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <h3 className="text-lg font-bold text-gray-900">{t("settings.language")}</h3>
+                  <p className="mt-1 text-sm text-gray-500">{t("settings.languageHelp")}</p>
+                </div>
+
+                <div className="flex gap-2 rounded-2xl bg-gray-100 p-1">
+                  <button
+                    type="button"
+                    onClick={() => setLocale("en")}
+                    className={`rounded-xl px-4 py-2 text-sm font-semibold transition-colors ${
+                      locale === "en" ? "bg-white text-brand shadow-sm" : "text-gray-500"
+                    }`}
+                  >
+                    {t("settings.english")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLocale("th")}
+                    className={`rounded-xl px-4 py-2 text-sm font-semibold transition-colors ${
+                      locale === "th" ? "bg-white text-brand shadow-sm" : "text-gray-500"
+                    }`}
+                  >
+                    {t("settings.thai")}
+                  </button>
+                </div>
+              </div>
+            </section>
+
+            <section className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
               {isLoading ? (
-                <p className="text-sm text-gray-500">Loading account...</p>
+                <p className="text-sm text-gray-500">{t("common.loading")}</p>
               ) : isAuthenticated && user ? (
                 <div className="space-y-5">
                   <div>
                     <p className="text-sm font-semibold uppercase tracking-[0.16em] text-brand">
-                      Account
+                      {t("settings.account")}
                     </p>
                     <h3 className="mt-2 text-2xl font-bold text-gray-900">
-                      {user.name ?? "BusBuddy User"}
+                      {user.name ?? t("common.busBuddy")}
                     </h3>
                     <p className="mt-1 text-sm text-gray-500">{user.email}</p>
                   </div>
@@ -113,13 +145,13 @@ export default function SettingsPage() {
                     </span>
                     {showFleetShortcut ? (
                       <span className="inline-flex items-center rounded-full bg-blue-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-blue-800">
-                        Fleet access enabled
+                        {t("settings.fleetAccessEnabled")}
                       </span>
                     ) : null}
                   </div>
 
                   <div className="rounded-2xl border border-green-100 bg-green-50 px-4 py-3 text-sm text-green-800">
-                    Favorites and alert subscriptions are enabled for this account.
+                    {t("settings.favoritesEnabled")}
                   </div>
 
                   <div className="flex flex-col gap-3 md:flex-row">
@@ -130,13 +162,13 @@ export default function SettingsPage() {
                         className="w-full md:w-auto"
                       >
                         <BusFront className="mr-2 h-4 w-4" />
-                        Open Fleet Manager
+                        {t("common.openFleetManager")}
                       </Button>
                     ) : null}
 
                     <Button variant="outline" onClick={logout} className="w-full md:w-auto">
                       <LogOut className="mr-2 h-4 w-4" />
-                      Sign Out
+                      {t("common.signOut")}
                     </Button>
                   </div>
                 </div>
@@ -152,7 +184,7 @@ export default function SettingsPage() {
                           : "text-gray-500"
                       }`}
                     >
-                      Login
+                      {t("common.login")}
                     </button>
                     <button
                       type="button"
@@ -163,7 +195,7 @@ export default function SettingsPage() {
                           : "text-gray-500"
                       }`}
                     >
-                      Register
+                      {t("common.register")}
                     </button>
                   </div>
 
@@ -172,19 +204,19 @@ export default function SettingsPage() {
                       <>
                         <label className="block">
                           <span className="mb-2 block text-sm font-medium text-gray-700">
-                            Name
+                            {t("settings.name")}
                           </span>
                           <input
                             value={name}
                             onChange={(event) => setName(event.target.value)}
                             className="w-full rounded-2xl border border-gray-200 px-4 py-3 outline-none transition-colors focus:border-brand"
-                            placeholder="Your name"
+                            placeholder={t("settings.yourName")}
                           />
                         </label>
 
                         <label className="block">
                           <span className="mb-2 block text-sm font-medium text-gray-700">
-                            Account Type
+                            {t("settings.accountType")}
                           </span>
                           <select
                             value={role}
@@ -193,7 +225,7 @@ export default function SettingsPage() {
                           >
                             {REGISTERABLE_ROLES.map((registerableRole) => (
                               <option key={registerableRole} value={registerableRole}>
-                                {formatUserRole(registerableRole)}
+                                {formatUserRole(registerableRole, locale)}
                               </option>
                             ))}
                           </select>
@@ -203,7 +235,7 @@ export default function SettingsPage() {
 
                     <label className="block">
                       <span className="mb-2 block text-sm font-medium text-gray-700">
-                        Email
+                        {t("settings.email")}
                       </span>
                       <input
                         type="email"
@@ -217,7 +249,7 @@ export default function SettingsPage() {
 
                     <label className="block">
                       <span className="mb-2 block text-sm font-medium text-gray-700">
-                        Password
+                        {t("settings.password")}
                       </span>
                       <input
                         type="password"
@@ -226,7 +258,7 @@ export default function SettingsPage() {
                         required
                         minLength={8}
                         className="w-full rounded-2xl border border-gray-200 px-4 py-3 outline-none transition-colors focus:border-brand"
-                        placeholder="Minimum 8 characters"
+                        placeholder={t("settings.passwordHint")}
                       />
                     </label>
 
@@ -240,12 +272,12 @@ export default function SettingsPage() {
                       {mode === "login" ? (
                         <>
                           <LogIn className="mr-2 h-4 w-4" />
-                          Sign In
+                          {t("common.signIn")}
                         </>
                       ) : (
                         <>
                           <UserPlus className="mr-2 h-4 w-4" />
-                          Create Account
+                          {t("common.createAccount")}
                         </>
                       )}
                     </Button>

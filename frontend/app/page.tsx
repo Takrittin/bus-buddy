@@ -22,6 +22,7 @@ import { useRoutes } from "@/hooks/useRoutes";
 import { Bus, Direction, Location, RouteOverlay, Stop } from "@/types/bus";
 import { LocateFixed } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { useLanguage } from "@/lib/i18n/LanguageContext";
 
 const DEFAULT_BANGKOK_CENTER: Location = { lat: 13.7457, lng: 100.5347 };
 const NEARBY_STOP_RADIUS_METERS = 1200;
@@ -29,6 +30,7 @@ const DEFAULT_MAP_ZOOM = 13;
 const USER_LOCATION_ZOOM = 15;
 
 export default function HomePage() {
+  const { t } = useLanguage();
   const [userLocation, setUserLocation] = useState<Location | null>(null);
   const [mapCenter, setMapCenter] = useState<Location>(DEFAULT_BANGKOK_CENTER);
   const [mapZoom, setMapZoom] = useState(DEFAULT_MAP_ZOOM);
@@ -276,8 +278,8 @@ export default function HomePage() {
           <div className="w-full h-[55%] md:h-full md:w-[400px] lg:w-[450px] flex flex-col bg-white shadow-[0_-10px_20px_-10px_rgba(0,0,0,0.1)] md:shadow-[10px_0_20px_-10px_rgba(0,0,0,0.1)] order-2 md:order-1 z-20 md:z-10 rounded-t-3xl md:rounded-t-none pb-[80px] md:pb-0">
             <div className="p-4 md:p-6 bg-white border-b border-gray-100 flex-none rounded-t-3xl md:rounded-t-none">
               <div className="w-12 h-1.5 bg-gray-200 rounded-full mx-auto mb-4 md:hidden" />
-              <h2 className="text-xl md:text-2xl font-bold text-gray-900 px-2 lg:px-0 mt-2 md:mt-0">Nearby Stops</h2>
-              <p className="text-sm text-gray-500 px-2 lg:px-0 mt-1">Bus stops within walking distance</p>
+              <h2 className="text-xl md:text-2xl font-bold text-gray-900 px-2 lg:px-0 mt-2 md:mt-0">{t("home.nearbyStops")}</h2>
+              <p className="text-sm text-gray-500 px-2 lg:px-0 mt-1">{t("home.walkingDistance")}</p>
               <div className="mt-4 flex gap-2 overflow-x-auto px-2 pb-1 lg:px-0">
                 <button
                   type="button"
@@ -288,7 +290,7 @@ export default function HomePage() {
                       : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
                   }`}
                 >
-                  All routes
+                  {t("common.allRoutes")}
                 </button>
                 {routeFilters.map((route) => {
                   const isActive = selectedRouteIdSet.has(route.id);
@@ -312,7 +314,7 @@ export default function HomePage() {
                           : undefined
                       }
                     >
-                      Route {route.routeNumber}
+                      {t("home.routeChip", { routeNumber: route.routeNumber })}
                     </button>
                   );
                 })}

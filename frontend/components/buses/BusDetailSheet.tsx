@@ -1,25 +1,28 @@
 "use client";
 
+"use client";
+
 import React from "react";
 import { Bus } from "@/types/bus";
 import { Activity, Gauge, Info, Route, User, Users, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { useLanguage } from "@/lib/i18n/LanguageContext";
 
 interface BusDetailSheetProps {
   bus: Bus;
   onClose: () => void;
 }
 
-function toDisplayLabel(value?: string) {
+function toDisplayLabel(value: string | undefined, fallback: string) {
   if (!value) {
-    return "Not available";
+    return fallback;
   }
 
   return value.replace(/_/g, " ");
 }
 
-function formatUpdatedTime(value: string) {
-  return new Date(value).toLocaleTimeString([], {
+function formatUpdatedTime(value: string, locale: string) {
+  return new Date(value).toLocaleTimeString(locale, {
     hour: "2-digit",
     minute: "2-digit",
   });
@@ -48,12 +51,13 @@ function DetailRow({
 }
 
 export function BusDetailSheet({ bus, onClose }: BusDetailSheetProps) {
+  const { t, locale } = useLanguage();
   const routeLabel = bus.routeNumber ?? bus.routeId;
   const speedLabel =
-    typeof bus.speed === "number" ? `${Math.round(bus.speed)} km/h` : "Not available";
+    typeof bus.speed === "number" ? `${Math.round(bus.speed)} km/h` : t("common.notAvailable");
   const capacityLabel =
-    typeof bus.capacity === "number" ? `${bus.capacity} passengers` : "Not available";
-  const nextStopLabel = bus.nextStopName ?? bus.nextStopId ?? "Not available";
+    typeof bus.capacity === "number" ? t("bus.passengers", { count: bus.capacity }) : t("common.notAvailable");
+  const nextStopLabel = bus.nextStopName ?? bus.nextStopId ?? t("common.notAvailable");
 
   return (
     <div className="fixed md:absolute inset-x-0 bottom-0 md:inset-auto md:top-4 md:right-4 md:w-[400px] z-50 p-4 md:p-0 transition-transform">
@@ -65,16 +69,16 @@ export function BusDetailSheet({ bus, onClose }: BusDetailSheetProps) {
         <div className="mb-6 flex items-start justify-between md:mt-4">
           <div>
             <div className="inline-flex items-center rounded-full bg-brand px-3 py-1 text-sm font-semibold text-white shadow-sm">
-              Route {routeLabel}
+              {t("bus.routePill", { value: routeLabel })}
             </div>
             <h2 className="mt-3 text-2xl font-bold leading-tight text-gray-900">
-              Bus {bus.vehicleNumber ?? bus.id}
+              {t("bus.bus", { value: bus.vehicleNumber ?? bus.id })}
             </h2>
             <p className="mt-1 text-sm font-medium text-brand">
-              Live vehicle details
+              {t("bus.liveVehicleDetails")}
             </p>
             <p className="mt-2 text-xs text-gray-500">
-              Updated at {formatUpdatedTime(bus.lastUpdated)}
+              {t("common.updatedAt", { time: formatUpdatedTime(bus.lastUpdated, locale === "th" ? "th-TH" : "en-US") })}
             </p>
           </div>
           <Button
@@ -90,18 +94,18 @@ export function BusDetailSheet({ bus, onClose }: BusDetailSheetProps) {
         <div className="mb-6 grid grid-cols-2 gap-3">
           <div className="rounded-2xl bg-blue-50 px-4 py-3">
             <p className="text-xs font-semibold uppercase tracking-[0.12em] text-blue-700">
-              Status
+              {t("common.status")}
             </p>
             <p className="mt-1 text-base font-bold capitalize text-blue-950">
-              {toDisplayLabel(bus.status)}
+              {toDisplayLabel(bus.status, t("common.notAvailable"))}
             </p>
           </div>
           <div className="rounded-2xl bg-orange-50 px-4 py-3">
             <p className="text-xs font-semibold uppercase tracking-[0.12em] text-orange-700">
-              Occupancy
+              {t("common.occupancy")}
             </p>
             <p className="mt-1 text-base font-bold capitalize text-orange-950">
-              {toDisplayLabel(bus.occupancyLevel)}
+              {toDisplayLabel(bus.occupancyLevel, t("common.notAvailable"))}
             </p>
           </div>
         </div>
@@ -109,33 +113,33 @@ export function BusDetailSheet({ bus, onClose }: BusDetailSheetProps) {
         <div className="flex-1 space-y-3 overflow-y-auto pr-2 -mr-2">
           <DetailRow
             icon={<Info className="h-4 w-4" />}
-            label="License Plate"
-            value={bus.licensePlate ?? "Not available"}
+            label={t("bus.licensePlate")}
+            value={bus.licensePlate ?? t("common.notAvailable")}
           />
           <DetailRow
             icon={<User className="h-4 w-4" />}
-            label="Driver"
-            value={bus.driverName ?? "Not available"}
+            label={t("bus.driver")}
+            value={bus.driverName ?? t("common.notAvailable")}
           />
           <DetailRow
             icon={<Users className="h-4 w-4" />}
-            label="Capacity"
+            label={t("bus.capacity")}
             value={capacityLabel}
           />
           <DetailRow
             icon={<Route className="h-4 w-4" />}
-            label="Next Stop"
+            label={t("bus.nextStop")}
             value={nextStopLabel}
           />
           <DetailRow
             icon={<Gauge className="h-4 w-4" />}
-            label="Speed"
+            label={t("bus.speed")}
             value={speedLabel}
           />
           <DetailRow
             icon={<Activity className="h-4 w-4" />}
-            label="Direction"
-            value={toDisplayLabel(bus.direction)}
+            label={t("bus.direction")}
+            value={toDisplayLabel(bus.direction, t("common.notAvailable"))}
           />
         </div>
       </div>

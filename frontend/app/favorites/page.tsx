@@ -12,8 +12,10 @@ import { StopCardSkeleton } from "@/components/ui/LoadingSkeleton";
 import { BusFront, HeartOff, LockKeyhole } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { useAuth } from "@/hooks/auth/useAuth";
+import { useLanguage } from "@/lib/i18n/LanguageContext";
 
 export default function FavoritesPage() {
+  const { t } = useLanguage();
   const [favoriteStops, setFavoriteStops] = useState<Stop[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const router = useRouter();
@@ -79,7 +81,7 @@ export default function FavoritesPage() {
         
         <main className="flex-1 w-full h-full overflow-y-auto pb-24 md:pb-8 md:pl-20">
           <div className="max-w-4xl mx-auto px-4 pt-6 md:px-8">
-            <h2 className="text-3xl font-bold text-gray-900 mb-8">Saved Favorites</h2>
+            <h2 className="text-3xl font-bold text-gray-900 mb-8">{t("favorites.title")}</h2>
             
             {isLoading ? (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -91,14 +93,14 @@ export default function FavoritesPage() {
               <div className="mt-20">
                 <EmptyState
                   icon={<LockKeyhole className="h-16 w-16 mx-auto" />}
-                  title="Sign in to save favorites"
-                  description="You can browse the app as a guest, but saved stops are only available after logging in."
+                  title={t("favorites.signInTitle")}
+                  description={t("favorites.signInDescription")}
                   action={
                     <Button
                       variant="primary"
                       onClick={() => router.push("/settings?mode=register")}
                     >
-                      Open Settings
+                      {t("common.openSettings")}
                     </Button>
                   }
                 />
@@ -107,14 +109,14 @@ export default function FavoritesPage() {
               <div className="mt-20">
                 <EmptyState
                   icon={<BusFront className="h-16 w-16 mx-auto" />}
-                  title="Favorites are hidden for fleet managers"
-                  description="This account is focused on operations, so saved rider stops are disabled for the fleet workflow."
+                  title={t("favorites.fleetTitle")}
+                  description={t("favorites.fleetDescription")}
                   action={
                     <Button
                       variant="primary"
                       onClick={() => router.push("/fleet")}
                     >
-                      Open Fleet Manager
+                      {t("common.openFleetManager")}
                     </Button>
                   }
                 />
@@ -123,8 +125,8 @@ export default function FavoritesPage() {
               <div className="mt-20">
                 <EmptyState 
                   icon={<HeartOff className="h-16 w-16 mx-auto" />}
-                  title="No favorites yet"
-                  description="Save stops you use frequently to quickly see bus ETAs."
+                  title={t("favorites.emptyTitle")}
+                  description={t("favorites.emptyDescription")}
                 />
               </div>
             ) : (

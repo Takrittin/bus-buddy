@@ -1,7 +1,10 @@
+"use client";
+
 import React from "react";
 import { Stop } from "@/types/bus";
 import { MapPin } from "lucide-react";
 import { FavoriteButton } from "@/components/ui/FavoriteButton";
+import { useLanguage } from "@/lib/i18n/LanguageContext";
 
 interface StopCardProps {
   stop: Stop;
@@ -11,16 +14,16 @@ interface StopCardProps {
   onToggleFavorite?: (isFavorite: boolean) => Promise<void>;
 }
 
-function getDistanceLabel(distance?: number) {
+function getDistanceLabel(distance: number | undefined, t: (key: string, vars?: Record<string, string | number>) => string) {
   if (distance === undefined) {
     return null;
   }
 
   if (distance <= 50) {
-    return "Near you";
+    return t("common.nearYou");
   }
 
-  return `${distance}m away`;
+  return t("common.metersAway", { distance });
 }
 
 export function StopCard({
@@ -30,7 +33,8 @@ export function StopCard({
   isFavorite = false,
   onToggleFavorite,
 }: StopCardProps) {
-  const distanceLabel = getDistanceLabel(stop.distance);
+  const { t } = useLanguage();
+  const distanceLabel = getDistanceLabel(stop.distance, t);
 
   return (
     <div
@@ -47,7 +51,7 @@ export function StopCard({
               <h3 className="font-semibold text-gray-900 leading-tight">{stop.name}</h3>
               {isNearest ? (
                 <span className="rounded-full bg-orange-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-brand">
-                  Nearest
+                  {t("common.nearest")}
                 </span>
               ) : null}
             </div>

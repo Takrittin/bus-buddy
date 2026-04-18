@@ -1,4 +1,5 @@
 import { UserRole } from "@/types/auth";
+import { AppLocale } from "@/lib/i18n/messages";
 
 const FLEET_ACCESS_ROLES = new Set<UserRole>(["ADMIN", "FLEET"]);
 const RIDER_TOOL_ROLES = new Set<UserRole>(["USER", "ADMIN"]);
@@ -23,14 +24,14 @@ export function isFleetManager(role?: UserRole | null) {
   return role === "FLEET";
 }
 
-export function formatUserRole(role?: UserRole | null) {
+export function formatUserRole(role?: UserRole | null, locale: AppLocale = "en") {
   switch (role) {
     case "ADMIN":
-      return "Admin";
+      return locale === "th" ? "แอดมิน" : "Admin";
     case "FLEET":
-      return "Fleet Manager";
+      return locale === "th" ? "ผู้จัดการฟลีท" : "Fleet Manager";
     case "USER":
     default:
-      return "User";
+      return locale === "th" ? "ผู้ใช้" : "User";
   }
 }

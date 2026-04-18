@@ -5,32 +5,32 @@ import { usePathname } from "next/navigation";
 import { BusFront, Map, Heart, Settings, Bell } from "lucide-react";
 import { cn } from "@/components/ui/Button";
 import { useAuth } from "@/hooks/auth/useAuth";
-
-const RIDER_TABS = [
-  { name: "Map", href: "/", icon: Map },
-  { name: "Favorites", href: "/favorites", icon: Heart },
-  { name: "Alerts", href: "/alerts", icon: Bell },
-  { name: "Settings", href: "/settings", icon: Settings },
-];
-
-const FLEET_TAB = { name: "Fleet", href: "/fleet", icon: BusFront };
-const FLEET_TABS = [
-  { name: "Map", href: "/", icon: Map },
-  FLEET_TAB,
-  { name: "Settings", href: "/settings", icon: Settings },
-];
+import { useLanguage } from "@/lib/i18n/LanguageContext";
 
 export function BottomNav() {
   const pathname = usePathname();
   const { canAccessFleet, canUseRiderTools, isLoading, isFleetManager } = useAuth();
+  const { t } = useLanguage();
+  const riderTabs = [
+    { name: t("nav.map"), href: "/", icon: Map },
+    { name: t("nav.favorites"), href: "/favorites", icon: Heart },
+    { name: t("nav.alerts"), href: "/alerts", icon: Bell },
+    { name: t("nav.settings"), href: "/settings", icon: Settings },
+  ];
+  const fleetTab = { name: t("nav.fleet"), href: "/fleet", icon: BusFront };
+  const fleetTabs = [
+    { name: t("nav.map"), href: "/", icon: Map },
+    fleetTab,
+    { name: t("nav.settings"), href: "/settings", icon: Settings },
+  ];
 
   const tabs = isLoading
-    ? RIDER_TABS
+    ? riderTabs
     : isFleetManager
-      ? FLEET_TABS
+      ? fleetTabs
       : canAccessFleet && canUseRiderTools
-        ? [...RIDER_TABS, FLEET_TAB]
-        : RIDER_TABS;
+        ? [...riderTabs, fleetTab]
+        : riderTabs;
 
   return (
     <>

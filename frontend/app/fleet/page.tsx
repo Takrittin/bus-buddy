@@ -27,6 +27,7 @@ import { useAuth } from "@/hooks/auth/useAuth";
 import { useFleetOperations } from "@/hooks/useFleetOperations";
 import { useLiveBuses } from "@/hooks/useLiveBuses";
 import { useRoutes } from "@/hooks/useRoutes";
+import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { formatUserRole } from "@/lib/auth/roles";
 import { Bus, BusStatus, Direction, Route, TrafficLevel } from "@/types/bus";
 import { DriverShift, ShiftStatus } from "@/types/fleet";
@@ -57,59 +58,58 @@ interface FleetAlertItem {
   tone: AlertTone;
 }
 
-const STATUS_OPTIONS: Array<{ value: "all" | BusStatus; label: string }> = [
-  { value: "all", label: "All statuses" },
-  { value: "running", label: "Running" },
-  { value: "delayed", label: "Delayed" },
-  { value: "near_stop", label: "Near stop" },
-  { value: "at_stop", label: "At stop" },
-  { value: "out_of_service", label: "Out of service" },
-];
-
-const DIRECTION_OPTIONS: Array<{ value: "all" | Direction; label: string }> = [
-  { value: "all", label: "All directions" },
-  { value: "outbound", label: "Outbound" },
-  { value: "inbound", label: "Inbound" },
-];
-
-const TRAFFIC_OPTIONS: Array<{ value: "all" | TrafficLevel; label: string }> = [
-  { value: "all", label: "All traffic" },
-  { value: "light", label: "Light" },
-  { value: "moderate", label: "Moderate" },
-  { value: "heavy", label: "Heavy" },
-  { value: "severe", label: "Severe" },
-];
-
-function formatBusStatus(value?: string) {
-  return (value ?? "running").replace(/_/g, " ");
+function formatBusStatus(value: string | undefined, t: (key: string) => string) {
+  switch (value) {
+    case "delayed":
+      return t("fleet.delayed");
+    case "near_stop":
+      return t("fleet.nearStop");
+    case "at_stop":
+      return t("fleet.atStop");
+    case "out_of_service":
+      return t("fleet.outOfService");
+    case "running":
+    default:
+      return t("fleet.running");
+  }
 }
 
-function formatDirection(value?: Direction) {
-  return (value ?? "outbound").replace(/_/g, " ");
+function formatDirection(value: Direction | undefined, t: (key: string) => string) {
+  return value === "inbound" ? t("fleet.inbound") : t("fleet.outbound");
 }
 
-function formatTraffic(value?: TrafficLevel) {
-  return value ?? "moderate";
+function formatTraffic(value: TrafficLevel | undefined, t: (key: string) => string) {
+  switch (value) {
+    case "light":
+      return t("fleet.light");
+    case "heavy":
+      return t("fleet.heavy");
+    case "severe":
+      return t("fleet.severe");
+    case "moderate":
+    default:
+      return t("fleet.moderate");
+  }
 }
 
-function formatUpdatedTime(value: string) {
+function formatUpdatedTime(value: string, t: (key: string, vars?: Record<string, string | number>) => string) {
   const elapsedSeconds = Math.max(
     0,
     Math.round((Date.now() - new Date(value).getTime()) / 1000),
   );
 
   if (elapsedSeconds < 10) {
-    return "Just now";
+    return t("fleet.justNow");
   }
 
   if (elapsedSeconds < 60) {
-    return `${elapsedSeconds}s ago`;
+    return t("fleet.secondsAgo", { count: elapsedSeconds });
   }
 
   const elapsedMinutes = Math.round(elapsedSeconds / 60);
 
   if (elapsedMinutes < 60) {
-    return `${elapsedMinutes}m ago`;
+    return t("fleet.minutesAgo", { count: elapsedMinutes });
   }
 
   return new Date(value).toLocaleTimeString([], {
@@ -145,8 +145,18 @@ function createDefaultShiftFormState(): ShiftFormState {
   };
 }
 
-function formatShiftStatus(value: ShiftStatus) {
-  return value.replace(/_/g, " ");
+function formatShiftStatus(value: ShiftStatus, t: (key: string) => string) {
+  switch (value) {
+    case "ACTIVE":
+      return t("common.active");
+    case "COMPLETED":
+      return t("common.completed");
+    case "MISSED":
+      return t("common.missed");
+    case "SCHEDULED":
+    default:
+      return t("common.scheduled");
+  }
 }
 
 function getShiftStatusBadgeClass(status: ShiftStatus) {
@@ -332,7 +342,10 @@ function FleetTabButton({
   );
 }
 
-function buildFleetAlerts(buses: Bus[]) {
+function buildFleetAlerts(
+  buses: Bus[],
+  t: (key: string, vars?: Record<string, string | number>) => string,
+) {
   const alerts = buses.flatMap<FleetAlertItem>((bus) => {
     const routeNumber = bus.routeNumber ?? bus.routeId;
     const busLabel = bus.licensePlate ?? bus.vehicleNumber ?? bus.id;
@@ -344,8 +357,8 @@ function buildFleetAlerts(buses: Bus[]) {
         busId: bus.id,
         routeId: bus.routeId,
         routeNumber,
-        title: `Bus ${busLabel} is out of service`,
-        description: `Route ${routeNumber} is currently not available for dispatch.`,
+        title: `${t("bus.bus", { value: busLabel })} ${t("fleet.outOfService").toLowerCase()}`,
+        description: `${t("common.route")} ${routeNumber} ${t("fleet.outOfService").toLowerCase()}.`,
         severity: 4,
         tone: "red",
       });
@@ -357,8 +370,8 @@ function buildFleetAlerts(buses: Bus[]) {
         busId: bus.id,
         routeId: bus.routeId,
         routeNumber,
-        title: `Route ${routeNumber} is delayed`,
-        description: `${busLabel} is running behind schedule near ${bus.nextStopName ?? "the next stop"}.`,
+        title: `${t("common.route")} ${routeNumber} ${t("fleet.delayed").toLowerCase()}`,
+        description: `${busLabel} ${t("fleet.delayed").toLowerCase()} near ${bus.nextStopName ?? t("common.nextStop").toLowerCase()}.`,
         severity: 3,
         tone: "orange",
       });
@@ -370,7 +383,7 @@ function buildFleetAlerts(buses: Bus[]) {
         busId: bus.id,
         routeId: bus.routeId,
         routeNumber,
-        title: `Severe traffic on Route ${routeNumber}`,
+        title: `${t("fleet.severe")} ${t("fleet.trafficSuffix", { level: "" }).trim()} ${t("common.route")} ${routeNumber}`,
         description: `${busLabel} is moving through a high-congestion corridor.`,
         severity: 3,
         tone: "red",
@@ -383,8 +396,8 @@ function buildFleetAlerts(buses: Bus[]) {
         busId: bus.id,
         routeId: bus.routeId,
         routeNumber,
-        title: `Bus ${busLabel} is at full capacity`,
-        description: `Passengers may need dispatch support on Route ${routeNumber}.`,
+        title: `${t("bus.bus", { value: busLabel })} ${t("common.capacity").toLowerCase()} full`,
+        description: `Passengers may need dispatch support on ${t("common.route")} ${routeNumber}.`,
         severity: 2,
         tone: "blue",
       });
@@ -396,7 +409,7 @@ function buildFleetAlerts(buses: Bus[]) {
         busId: bus.id,
         routeId: bus.routeId,
         routeNumber,
-        title: `Slow approach to ${bus.nextStopName ?? "next stop"}`,
+        title: `Slow approach to ${bus.nextStopName ?? t("common.nextStop").toLowerCase()}`,
         description: `${busLabel} is taking longer than expected to reach the next stop.`,
         severity: 1,
         tone: "orange",
@@ -461,6 +474,7 @@ function buildRouteHealth(routes: Route[], buses: Bus[]) {
 
 export default function FleetPage() {
   const router = useRouter();
+  const { locale, t } = useLanguage();
   const { user, isAuthenticated, isLoading: isAuthLoading, canAccessFleet } = useAuth();
   const { buses, isLoading: isLoadingBuses } = useLiveBuses();
   const { routes, isLoading: isLoadingRoutes } = useRoutes();
@@ -487,6 +501,26 @@ export default function FleetPage() {
   const [shiftActionError, setShiftActionError] = useState<string | null>(null);
   const [shiftActionSuccess, setShiftActionSuccess] = useState<string | null>(null);
   const deferredSearchQuery = useDeferredValue(searchQuery.trim().toLowerCase());
+  const STATUS_OPTIONS: Array<{ value: "all" | BusStatus; label: string }> = [
+    { value: "all", label: t("fleet.allStatuses") },
+    { value: "running", label: t("fleet.running") },
+    { value: "delayed", label: t("fleet.delayed") },
+    { value: "near_stop", label: t("fleet.nearStop") },
+    { value: "at_stop", label: t("fleet.atStop") },
+    { value: "out_of_service", label: t("fleet.outOfService") },
+  ];
+  const DIRECTION_OPTIONS: Array<{ value: "all" | Direction; label: string }> = [
+    { value: "all", label: t("fleet.allDirections") },
+    { value: "outbound", label: t("fleet.outbound") },
+    { value: "inbound", label: t("fleet.inbound") },
+  ];
+  const TRAFFIC_OPTIONS: Array<{ value: "all" | TrafficLevel; label: string }> = [
+    { value: "all", label: t("fleet.allTraffic") },
+    { value: "light", label: t("fleet.light") },
+    { value: "moderate", label: t("fleet.moderate") },
+    { value: "heavy", label: t("fleet.heavy") },
+    { value: "severe", label: t("fleet.severe") },
+  ];
 
   const routeOptions = useMemo(
     () =>
@@ -500,7 +534,7 @@ export default function FleetPage() {
     [routes],
   );
 
-  const alerts = useMemo(() => buildFleetAlerts(buses), [buses]);
+  const alerts = useMemo(() => buildFleetAlerts(buses, t), [buses, t]);
   const routeHealth = useMemo(() => buildRouteHealth(routes, buses), [routes, buses]);
   const sortedShifts = useMemo(
     () =>
@@ -726,19 +760,19 @@ export default function FleetPage() {
               <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                 <div>
                   <p className="text-sm font-semibold uppercase tracking-[0.16em] text-brand">
-                    Operations
+                    {t("fleet.operations")}
                   </p>
-                  <h2 className="mt-2 text-3xl font-bold text-gray-900">Fleet Manager</h2>
+                  <h2 className="mt-2 text-3xl font-bold text-gray-900">{t("fleet.title")}</h2>
                   <p className="mt-2 max-w-3xl text-sm text-gray-500">
-                    Monitor vehicle health, filter live fleet activity, and respond to route issues before they affect passengers.
+                    {t("fleet.subtitle")}
                   </p>
                 </div>
 
                 {user ? (
                   <div className="rounded-2xl border border-orange-100 bg-orange-50 px-4 py-3 text-sm text-orange-900">
-                    Signed in as <span className="font-semibold">{user.name ?? user.email}</span>
+                    {t("fleet.signedInAs")} <span className="font-semibold">{user.name ?? user.email}</span>
                     {" • "}
-                    {formatUserRole(user.role)}
+                    {formatUserRole(user.role, locale)}
                   </div>
                 ) : null}
               </div>
@@ -746,17 +780,17 @@ export default function FleetPage() {
 
             {isLoading ? (
               <section className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
-                <p className="text-sm text-gray-500">Loading fleet dashboard...</p>
+                <p className="text-sm text-gray-500">{t("fleet.loading")}</p>
               </section>
             ) : !isAuthenticated ? (
               <section className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
                 <EmptyState
                   icon={<ShieldAlert className="h-16 w-16 mx-auto" />}
-                  title="Sign in to access fleet tools"
-                  description="Fleet operations pages are only available after logging in with a fleet or admin account."
+                  title={t("fleet.signInTitle")}
+                  description={t("fleet.signInDescription")}
                   action={
                     <Button variant="primary" onClick={() => router.push("/settings?mode=login")}>
-                      Open Settings
+                      {t("common.openSettings")}
                     </Button>
                   }
                 />
@@ -765,11 +799,11 @@ export default function FleetPage() {
               <section className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
                 <EmptyState
                   icon={<BusFront className="h-16 w-16 mx-auto" />}
-                  title="Fleet access required"
-                  description="This account can use the rider experience, but it does not have fleet manager permissions yet."
+                  title={t("fleet.accessTitle")}
+                  description={t("fleet.accessDescription")}
                   action={
                     <Button variant="outline" onClick={() => router.push("/")}>
-                      Back to Map
+                      {t("common.backToMap")}
                     </Button>
                   }
                 />
@@ -779,27 +813,27 @@ export default function FleetPage() {
                 <section className="rounded-3xl border border-gray-100 bg-white p-4 shadow-sm">
                   <div className="flex flex-wrap gap-3">
                     <FleetTabButton
-                      label="Overview"
+                      label={t("fleet.overview")}
                       value="overview"
                       activeTab={activeTab}
                       onClick={setActiveTab}
                     />
                     <FleetTabButton
-                      label="Alerts"
+                      label={t("fleet.alerts")}
                       value="alerts"
                       activeTab={activeTab}
                       onClick={setActiveTab}
                       count={alerts.length}
                     />
                     <FleetTabButton
-                      label="Vehicles"
+                      label={t("fleet.vehicles")}
                       value="vehicles"
                       activeTab={activeTab}
                       onClick={setActiveTab}
                       count={filteredBuses.length}
                     />
                     <FleetTabButton
-                      label="Shifts"
+                      label={t("fleet.shifts")}
                       value="shifts"
                       activeTab={activeTab}
                       onClick={setActiveTab}
@@ -811,25 +845,25 @@ export default function FleetPage() {
                 <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
                   <FleetStatCard
                     icon={<Activity className="h-5 w-5 text-orange-700" />}
-                    label="Active Buses"
+                    label={t("fleet.activeBuses")}
                     value={`${dashboardStats.activeBuses}`}
                     tone="orange"
                   />
                   <FleetStatCard
                     icon={<AlertTriangle className="h-5 w-5 text-red-700" />}
-                    label="Delayed Buses"
+                    label={t("fleet.delayedBuses")}
                     value={`${dashboardStats.delayedBuses}`}
                     tone="red"
                   />
                   <FleetStatCard
                     icon={<Gauge className="h-5 w-5 text-blue-700" />}
-                    label="Average Speed"
+                    label={t("fleet.averageSpeed")}
                     value={`${dashboardStats.averageSpeed} km/h`}
                     tone="blue"
                   />
                   <FleetStatCard
                     icon={<MapPinned className="h-5 w-5 text-green-700" />}
-                    label="Routes Monitored"
+                    label={t("fleet.routesMonitored")}
                     value={`${dashboardStats.watchedRoutes}`}
                     tone="green"
                   />
@@ -840,9 +874,9 @@ export default function FleetPage() {
                     <div className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
                       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                         <div>
-                          <h3 className="text-xl font-bold text-gray-900">Route Health</h3>
+                          <h3 className="text-xl font-bold text-gray-900">{t("fleet.routeHealth")}</h3>
                           <p className="mt-1 text-sm text-gray-500">
-                            Highest current delay and live vehicle coverage by route.
+                            {t("fleet.routeHealthSubtitle")}
                           </p>
                         </div>
                       </div>
@@ -861,7 +895,7 @@ export default function FleetPage() {
                             <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
                               <div>
                                 <p className="text-sm font-semibold uppercase tracking-[0.12em] text-brand">
-                                  Route {route.routeNumber}
+                                  {t("common.route")} {route.routeNumber}
                                 </p>
                                 <p className="mt-1 font-semibold text-gray-900">{route.routeName}</p>
                               </div>
@@ -869,15 +903,15 @@ export default function FleetPage() {
                               <div className="grid grid-cols-3 gap-2 text-center text-sm text-gray-600 md:min-w-[240px]">
                                 <div className="rounded-2xl bg-white px-3 py-3">
                                   <p className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-400">
-                                    Delay
+                                    {t("fleet.delay")}
                                   </p>
                                   <p className="mt-1 font-semibold text-gray-900">
-                                    {route.delayMinutes} min
+                                    {route.delayMinutes} {locale === "th" ? "นาที" : "min"}
                                   </p>
                                 </div>
                                 <div className="rounded-2xl bg-white px-3 py-3">
                                   <p className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-400">
-                                    Live Buses
+                                    {t("fleet.liveBuses")}
                                   </p>
                                   <p className="mt-1 font-semibold text-gray-900">
                                     {route.liveBuses}
@@ -885,7 +919,7 @@ export default function FleetPage() {
                                 </div>
                                 <div className="rounded-2xl bg-white px-3 py-3">
                                   <p className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-400">
-                                    Avg Speed
+                                    {t("fleet.avgSpeed")}
                                   </p>
                                   <p className="mt-1 font-semibold text-gray-900">
                                     {route.averageSpeed} km/h
@@ -901,20 +935,20 @@ export default function FleetPage() {
                     <div className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
                       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                         <div>
-                          <h3 className="text-xl font-bold text-gray-900">Top Alerts</h3>
+                          <h3 className="text-xl font-bold text-gray-900">{t("fleet.topAlerts")}</h3>
                           <p className="mt-1 text-sm text-gray-500">
-                            The highest priority issues from the live fleet feed.
+                            {t("fleet.topAlertsSubtitle")}
                           </p>
                         </div>
                         <Button variant="outline" onClick={() => setActiveTab("alerts")}>
-                          View All Alerts
+                          {t("fleet.viewAllAlerts")}
                         </Button>
                       </div>
 
                       <div className="mt-5 space-y-3">
                         {topAlertsPreview.length === 0 ? (
                           <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-5 text-sm text-emerald-800">
-                            No urgent fleet alerts right now. Operations look stable.
+                            {t("fleet.noUrgentAlerts")}
                           </div>
                         ) : (
                           topAlertsPreview.map((alert) => (
@@ -934,7 +968,7 @@ export default function FleetPage() {
                                   </div>
                                   <div>
                                     <p className="text-xs font-semibold uppercase tracking-[0.12em] opacity-80">
-                                      Route {alert.routeNumber}
+                                      {t("common.route")} {alert.routeNumber}
                                     </p>
                                     <p className="mt-1 font-semibold">{alert.title}</p>
                                     <p className="mt-1 text-sm opacity-90">{alert.description}</p>
@@ -954,17 +988,17 @@ export default function FleetPage() {
                   <section className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
                     <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                       <div>
-                        <h3 className="text-xl font-bold text-gray-900">Operations Alerts</h3>
+                        <h3 className="text-xl font-bold text-gray-900">{t("fleet.operationsAlerts")}</h3>
                         <p className="mt-1 text-sm text-gray-500">
-                          Priority issues detected from the live fleet feed.
+                          {t("fleet.operationsAlertsSubtitle")}
                         </p>
                       </div>
                       <div className="flex flex-wrap gap-2 text-xs font-semibold uppercase tracking-[0.1em] text-gray-500">
                         <span className="rounded-full bg-red-100 px-3 py-1 text-red-700">
-                          {dashboardStats.severeTrafficBuses} severe traffic
+                          {t("fleet.severeTraffic", { count: dashboardStats.severeTrafficBuses })}
                         </span>
                         <span className="rounded-full bg-blue-100 px-3 py-1 text-blue-700">
-                          {dashboardStats.fullBuses} full buses
+                          {t("fleet.fullBuses", { count: dashboardStats.fullBuses })}
                         </span>
                       </div>
                     </div>
@@ -972,7 +1006,7 @@ export default function FleetPage() {
                     <div className="mt-5 space-y-3">
                       {alerts.length === 0 ? (
                         <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-5 text-sm text-emerald-800">
-                          No urgent fleet alerts right now. Operations look stable.
+                          {t("fleet.noUrgentAlerts")}
                         </div>
                       ) : (
                         alerts.map((alert) => (
@@ -989,7 +1023,7 @@ export default function FleetPage() {
                                 </div>
                                 <div>
                                   <p className="text-xs font-semibold uppercase tracking-[0.12em] opacity-80">
-                                    Route {alert.routeNumber}
+                                    {t("common.route")} {alert.routeNumber}
                                   </p>
                                   <p className="mt-1 font-semibold">{alert.title}</p>
                                   <p className="mt-1 text-sm opacity-90">{alert.description}</p>
@@ -1009,49 +1043,47 @@ export default function FleetPage() {
                   <div className="flex flex-col gap-5">
                     <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
                       <div>
-                        <h3 className="text-xl font-bold text-gray-900">Live Vehicle Board</h3>
+                        <h3 className="text-xl font-bold text-gray-900">{t("fleet.liveVehicleBoard")}</h3>
                         <p className="mt-1 text-sm text-gray-500">
-                          Search and filter vehicles by route, status, direction, or traffic condition.
+                          {t("fleet.liveVehicleSubtitle")}
                         </p>
                       </div>
                       <div className="text-sm text-gray-500">
-                        Showing <span className="font-semibold text-gray-900">{filteredBuses.length}</span>
-                        {" of "}
-                        <span className="font-semibold text-gray-900">{buses.length}</span> vehicles
+                        {t("fleet.showingVehicles", { filtered: filteredBuses.length, total: buses.length })}
                       </div>
                     </div>
 
                     <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-[1.4fr_repeat(4,0.8fr)_auto]">
                       <label className="block">
                         <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
-                          Search
+                          {t("common.search")}
                         </span>
                         <div className="flex items-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-3">
                           <Search className="h-4 w-4 text-gray-400" />
                           <input
                             value={searchQuery}
                             onChange={(event) => setSearchQuery(event.target.value)}
-                            placeholder="Plate, vehicle number, driver, stop"
+                            placeholder={t("fleet.searchPlaceholder")}
                             className="w-full border-0 bg-transparent text-sm text-gray-900 outline-none"
                           />
                         </div>
                       </label>
 
                       <FilterSelect
-                        label="Route"
+                        label={t("common.route")}
                         value={selectedRouteId}
                         onChange={setSelectedRouteId}
                       >
-                        <option value="all">All routes</option>
+                        <option value="all">{t("fleet.allRoutesOption")}</option>
                         {routeOptions.map((route) => (
                           <option key={route.id} value={route.id}>
-                            Route {route.routeNumber} • {route.routeName}
+                            {t("common.route")} {route.routeNumber} • {route.routeName}
                           </option>
                         ))}
                       </FilterSelect>
 
                       <FilterSelect
-                        label="Status"
+                        label={t("common.status")}
                         value={selectedStatus}
                         onChange={(value) => setSelectedStatus(value as "all" | BusStatus)}
                       >
@@ -1063,7 +1095,7 @@ export default function FleetPage() {
                       </FilterSelect>
 
                       <FilterSelect
-                        label="Direction"
+                        label={t("common.direction")}
                         value={selectedDirection}
                         onChange={(value) => setSelectedDirection(value as "all" | Direction)}
                       >
@@ -1075,7 +1107,7 @@ export default function FleetPage() {
                       </FilterSelect>
 
                       <FilterSelect
-                        label="Traffic"
+                        label={t("fleet.allTraffic")}
                         value={selectedTraffic}
                         onChange={(value) => setSelectedTraffic(value as "all" | TrafficLevel)}
                       >
@@ -1092,7 +1124,7 @@ export default function FleetPage() {
                           onClick={clearFilters}
                           className="w-full xl:w-auto"
                         >
-                          Clear
+                          {t("common.clear")}
                         </Button>
                       </div>
                     </div>
@@ -1100,11 +1132,11 @@ export default function FleetPage() {
                     {filteredBuses.length === 0 ? (
                       <EmptyState
                         icon={<BusFront className="h-12 w-12 mx-auto" />}
-                        title="No vehicles match these filters"
-                        description="Try clearing one or more filters to see more buses."
+                        title={t("fleet.noVehiclesTitle")}
+                        description={t("fleet.noVehiclesDescription")}
                         action={
                           <Button variant="outline" onClick={clearFilters}>
-                            Reset Filters
+                            {t("common.resetFilters")}
                           </Button>
                         }
                       />
@@ -1128,69 +1160,69 @@ export default function FleetPage() {
                                     {bus.licensePlate ?? bus.vehicleNumber ?? bus.id}
                                   </p>
                                   <p className="mt-1 text-sm text-gray-500">
-                                    Driver {bus.driverName ?? "Not assigned"}
+                                    {t("fleet.driver")}: {bus.driverName ?? t("fleet.driverUnassigned")}
                                   </p>
                                 </div>
                               </div>
 
                               <div>
                                 <p className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-400">
-                                  Status
+                                  {t("common.status")}
                                 </p>
                                 <div className="mt-2 flex flex-wrap gap-2">
                                   <span
                                     className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.08em] ${getStatusBadgeClass(bus.status)}`}
                                   >
-                                    {formatBusStatus(bus.status)}
+                                    {formatBusStatus(bus.status, t)}
                                   </span>
                                   <span
                                     className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.08em] ${getTrafficBadgeClass(bus.trafficLevel)}`}
                                   >
-                                    {formatTraffic(bus.trafficLevel)} traffic
+                                    {t("fleet.trafficSuffix", { level: formatTraffic(bus.trafficLevel, t) })}
                                   </span>
                                 </div>
                               </div>
 
                               <div>
                                 <p className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-400">
-                                  Direction
+                                  {t("common.direction")}
                                 </p>
                                 <p className="mt-2 text-sm font-semibold text-gray-900 capitalize">
-                                  {formatDirection(bus.direction)}
+                                  {formatDirection(bus.direction, t)}
                                 </p>
                                 <p className="mt-1 text-xs text-gray-500 capitalize">
-                                  {bus.occupancyLevel ?? "medium"} occupancy
+                                  {t("fleet.occupancySuffix", { level: bus.occupancyLevel ?? t("fleet.moderate") })}
                                 </p>
                               </div>
 
                               <div>
                                 <p className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-400">
-                                  Speed & ETA
+                                  {t("fleet.speedEta")}
                                 </p>
                                 <p className="mt-2 text-sm font-semibold text-gray-900">
-                                  {typeof bus.speed === "number" ? `${Math.round(bus.speed)} km/h` : "N/A"}
+                                  {typeof bus.speed === "number" ? `${Math.round(bus.speed)} km/h` : t("common.notAvailable")}
                                 </p>
                                 <p className="mt-1 text-xs text-gray-500">
-                                  ETA {bus.etaToNextStopMinutes ?? "--"} min
+                                  {t("fleet.etaMinutes", { minutes: bus.etaToNextStopMinutes ?? "--" })}
                                 </p>
                               </div>
 
                               <div>
                                 <p className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-400">
-                                  Next Stop
+                                  {t("common.nextStop")}
                                 </p>
                                 <p className="mt-2 text-sm font-semibold text-gray-900">
-                                  {bus.nextStopName ?? bus.nextStopId ?? "Not available"}
+                                  {bus.nextStopName ?? bus.nextStopId ?? t("common.notAvailable")}
                                 </p>
                                 <p className="mt-1 text-xs text-gray-500">
-                                  Updated {formatUpdatedTime(bus.lastUpdated)}
+                                  {t("common.updated", { time: formatUpdatedTime(bus.lastUpdated, t) })}
                                 </p>
                               </div>
 
                               <div className="flex items-center justify-between gap-3 xl:justify-end">
                                 <div className="rounded-2xl bg-white px-3 py-3 text-center">
                                   <p className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-400">
-                                    Capacity
+                                    {t("common.capacity")}
                                   </p>
                                   <p className="mt-1 text-sm font-semibold text-gray-900">
                                     {bus.capacity ?? "--"}
@@ -1213,15 +1245,15 @@ export default function FleetPage() {
                       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                         <div>
                           <h3 className="text-xl font-bold text-gray-900">
-                            {editingShiftId ? "Edit Shift Assignment" : "Assign Driver Shift"}
+                            {editingShiftId ? t("fleet.editShiftAssignment") : t("fleet.assignDriverShift")}
                           </h3>
                           <p className="mt-1 text-sm text-gray-500">
-                            Create, adjust, or close fleet driver shifts directly from operations.
+                            {t("fleet.shiftSubtitle")}
                           </p>
                         </div>
                         {editingShiftId ? (
                           <Button variant="outline" onClick={resetShiftForm}>
-                            Cancel Edit
+                            {t("common.cancelEdit")}
                           </Button>
                         ) : null}
                       </div>
@@ -1229,7 +1261,7 @@ export default function FleetPage() {
                       <div className="mt-5 grid grid-cols-2 gap-3">
                         <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4">
                           <p className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">
-                            Active
+                            {t("common.active")}
                           </p>
                           <p className="mt-2 text-2xl font-black text-emerald-900">
                             {shiftStats.active}
@@ -1237,7 +1269,7 @@ export default function FleetPage() {
                         </div>
                         <div className="rounded-2xl border border-amber-100 bg-amber-50 p-4">
                           <p className="text-xs font-semibold uppercase tracking-[0.12em] text-amber-700">
-                            Scheduled
+                            {t("common.scheduled")}
                           </p>
                           <p className="mt-2 text-2xl font-black text-amber-900">
                             {shiftStats.scheduled}
@@ -1259,11 +1291,11 @@ export default function FleetPage() {
 
                       <form onSubmit={handleShiftSubmit} className="mt-5 space-y-4">
                         <FilterSelect
-                          label="Driver"
+                          label={t("fleet.driver")}
                           value={shiftForm.driverId}
                           onChange={(value) => handleShiftFormChange("driverId", value)}
                         >
-                          <option value="">Select driver</option>
+                          <option value="">{t("fleet.selectDriver")}</option>
                           {drivers.map((driver) => (
                             <option key={driver.id} value={driver.id}>
                               {driver.fullName} • {driver.employeeCode}
@@ -1272,11 +1304,11 @@ export default function FleetPage() {
                         </FilterSelect>
 
                         <FilterSelect
-                          label="Bus"
+                          label={t("fleet.bus")}
                           value={shiftForm.busId}
                           onChange={(value) => handleShiftFormChange("busId", value)}
                         >
-                          <option value="">Select bus</option>
+                          <option value="">{t("fleet.selectBus")}</option>
                           {fleetBuses.map((bus) => (
                             <option key={bus.id} value={bus.id}>
                               {bus.vehicleNumber} • {bus.licensePlate}
@@ -1285,21 +1317,21 @@ export default function FleetPage() {
                         </FilterSelect>
 
                         <FilterSelect
-                          label="Route"
+                          label={t("common.route")}
                           value={shiftForm.routeId}
                           onChange={(value) => handleShiftFormChange("routeId", value)}
                         >
-                          <option value="">Select route</option>
+                          <option value="">{t("fleet.selectRoute")}</option>
                           {routeOptions.map((route) => (
                             <option key={route.id} value={route.id}>
-                              Route {route.routeNumber} • {route.routeName}
+                              {t("common.route")} {route.routeNumber} • {route.routeName}
                             </option>
                           ))}
                         </FilterSelect>
 
                         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                           <FilterSelect
-                            label="Direction"
+                            label={t("common.direction")}
                             value={shiftForm.direction}
                             onChange={(value) =>
                               handleShiftFormChange("direction", value as Direction)
@@ -1315,7 +1347,7 @@ export default function FleetPage() {
                           </FilterSelect>
 
                           <FilterSelect
-                            label="Shift Status"
+                            label={t("fleet.shiftStatus")}
                             value={shiftForm.status}
                             onChange={(value) =>
                               handleShiftFormChange(
@@ -1324,15 +1356,15 @@ export default function FleetPage() {
                               )
                             }
                           >
-                            <option value="SCHEDULED">Scheduled</option>
-                            <option value="ACTIVE">Active</option>
+                            <option value="SCHEDULED">{t("common.scheduled")}</option>
+                            <option value="ACTIVE">{t("common.active")}</option>
                           </FilterSelect>
                         </div>
 
                         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                           <label className="block">
                             <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
-                              Shift Start
+                              {t("fleet.shiftStart")}
                             </span>
                             <input
                               type="datetime-local"
@@ -1347,7 +1379,7 @@ export default function FleetPage() {
 
                           <label className="block">
                             <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
-                              Shift End
+                              {t("fleet.shiftEnd")}
                             </span>
                             <input
                               type="datetime-local"
@@ -1363,7 +1395,7 @@ export default function FleetPage() {
 
                         <label className="block">
                           <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
-                            Notes
+                            {t("common.notes")}
                           </span>
                           <textarea
                             value={shiftForm.notes}
@@ -1371,7 +1403,7 @@ export default function FleetPage() {
                               handleShiftFormChange("notes", event.target.value)
                             }
                             rows={4}
-                            placeholder="Optional notes for dispatch or handover"
+                            placeholder={t("fleet.notesPlaceholder")}
                             className="w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 outline-none transition-colors focus:border-brand"
                           />
                         </label>
@@ -1388,10 +1420,10 @@ export default function FleetPage() {
                               !shiftForm.routeId
                             }
                           >
-                            {editingShiftId ? "Update Shift" : "Assign Shift"}
+                            {editingShiftId ? t("fleet.updateShift") : t("fleet.assignShift")}
                           </Button>
                           <Button type="button" variant="outline" onClick={resetShiftForm}>
-                            Reset Form
+                            {t("common.resetForm")}
                           </Button>
                         </div>
                       </form>
@@ -1400,17 +1432,17 @@ export default function FleetPage() {
                     <div className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
                       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                         <div>
-                          <h3 className="text-xl font-bold text-gray-900">Driver Shift Table</h3>
+                          <h3 className="text-xl font-bold text-gray-900">{t("fleet.driverShiftTable")}</h3>
                           <p className="mt-1 text-sm text-gray-500">
-                            Live shift assignments pulled from the fleet backend.
+                            {t("fleet.driverShiftSubtitle")}
                           </p>
                         </div>
                         <div className="flex flex-wrap gap-2 text-xs font-semibold uppercase tracking-[0.1em] text-gray-500">
                           <span className="rounded-full bg-blue-100 px-3 py-1 text-blue-700">
-                            {shiftStats.completed} completed
+                            {shiftStats.completed} {t("common.completed")}
                           </span>
                           <span className="rounded-full bg-red-100 px-3 py-1 text-red-700">
-                            {shiftStats.missed} missed
+                            {shiftStats.missed} {t("common.missed")}
                           </span>
                         </div>
                       </div>
@@ -1419,8 +1451,8 @@ export default function FleetPage() {
                         <div className="mt-5">
                           <EmptyState
                             icon={<ClipboardList className="mx-auto h-12 w-12" />}
-                            title="No driver shifts yet"
-                            description="Create the first assignment to start tracking driver schedules from the fleet page."
+                            title={t("fleet.noDriverShiftsTitle")}
+                            description={t("fleet.noDriverShiftsDescription")}
                           />
                         </div>
                       ) : (
@@ -1428,13 +1460,13 @@ export default function FleetPage() {
                           <table className="min-w-full divide-y divide-gray-100 text-sm">
                             <thead>
                               <tr className="text-left text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
-                                <th className="px-4 py-3">Driver</th>
-                                <th className="px-4 py-3">Bus</th>
-                                <th className="px-4 py-3">Route</th>
-                                <th className="px-4 py-3">Window</th>
-                                <th className="px-4 py-3">Status</th>
-                                <th className="px-4 py-3">Notes</th>
-                                <th className="px-4 py-3 text-right">Actions</th>
+                                <th className="px-4 py-3">{t("fleet.driver")}</th>
+                                <th className="px-4 py-3">{t("fleet.bus")}</th>
+                                <th className="px-4 py-3">{t("common.route")}</th>
+                                <th className="px-4 py-3">{t("fleet.window")}</th>
+                                <th className="px-4 py-3">{t("common.status")}</th>
+                                <th className="px-4 py-3">{t("common.notes")}</th>
+                                <th className="px-4 py-3 text-right">{t("fleet.actions")}</th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100">
@@ -1454,10 +1486,10 @@ export default function FleetPage() {
                                   </td>
                                   <td className="px-4 py-4">
                                     <p className="font-semibold text-gray-900">
-                                      Route {shift.routeNumber ?? shift.routeId}
+                                      {t("common.route")} {shift.routeNumber ?? shift.routeId}
                                     </p>
                                     <p className="mt-1 text-xs capitalize text-gray-500">
-                                      {formatDirection(shift.direction)}
+                                      {formatDirection(shift.direction, t)}
                                     </p>
                                   </td>
                                   <td className="px-4 py-4">
@@ -1471,13 +1503,14 @@ export default function FleetPage() {
                                           )}
                                         </p>
                                         <p className="mt-1 text-xs text-gray-500">
-                                          Check-in{" "}
-                                          {shift.checkInAt
-                                            ? new Date(shift.checkInAt).toLocaleTimeString([], {
-                                                hour: "2-digit",
-                                                minute: "2-digit",
-                                              })
-                                            : "--"}
+                                          {t("fleet.checkIn", {
+                                            time: shift.checkInAt
+                                              ? new Date(shift.checkInAt).toLocaleTimeString([], {
+                                                  hour: "2-digit",
+                                                  minute: "2-digit",
+                                                })
+                                              : "--",
+                                          })}
                                         </p>
                                       </div>
                                     </div>
@@ -1488,11 +1521,11 @@ export default function FleetPage() {
                                         shift.status,
                                       )}`}
                                     >
-                                      {formatShiftStatus(shift.status)}
+                                      {formatShiftStatus(shift.status, t)}
                                     </span>
                                   </td>
                                   <td className="max-w-[240px] px-4 py-4 text-gray-600">
-                                    {shift.notes ?? "No notes"}
+                                    {shift.notes ?? t("fleet.noNotes")}
                                   </td>
                                   <td className="px-4 py-4">
                                     <div className="flex justify-end gap-2">
@@ -1503,7 +1536,7 @@ export default function FleetPage() {
                                         onClick={() => startEditingShift(shift)}
                                       >
                                         <PenSquare className="mr-2 h-4 w-4" />
-                                        Edit
+                                        {t("common.edit")}
                                       </Button>
                                       {shift.status === "ACTIVE" || shift.status === "SCHEDULED" ? (
                                         <Button
@@ -1514,7 +1547,7 @@ export default function FleetPage() {
                                           disabled={isSubmittingShift}
                                         >
                                           <XCircle className="mr-2 h-4 w-4" />
-                                          Close
+                                          {t("common.close")}
                                         </Button>
                                       ) : null}
                                     </div>

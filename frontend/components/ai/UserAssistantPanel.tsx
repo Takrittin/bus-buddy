@@ -6,12 +6,7 @@ import { askUserAssistant } from "@/services/ai";
 import { Button } from "@/components/ui/Button";
 import { Location, Stop } from "@/types/bus";
 import { UserAssistantMessage } from "@/types/ai";
-
-const SUGGESTIONS = [
-  "ป้ายใกล้ฉันที่สุดคืออะไร",
-  "สายไหนมาถึงเร็วสุดที่ป้ายนี้",
-  "ถ้าจะไปบางกะปิควรรอสายไหนดี",
-];
+import { useLanguage } from "@/lib/i18n/LanguageContext";
 
 export function UserAssistantPanel({
   userLocation,
@@ -22,6 +17,7 @@ export function UserAssistantPanel({
   selectedStop: Stop | null;
   selectedRouteIds: string[];
 }) {
+  const { t } = useLanguage();
   const [isOpen, setIsOpen] = useState(false);
   const [inputValue, setInputValue] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -29,10 +25,14 @@ export function UserAssistantPanel({
   const [messages, setMessages] = useState<UserAssistantMessage[]>([
     {
       role: "assistant",
-      content:
-        "ถามฉันได้เลยเรื่องป้ายรถเมล์ใกล้ตัว, ETA, หรือสายไหนควรขึ้นจากจุดที่คุณอยู่ตอนนี้",
+      content: t("ai.intro"),
     },
   ]);
+  const suggestions = [
+    t("ai.suggestions.nearestStop"),
+    t("ai.suggestions.fastestRoute"),
+    t("ai.suggestions.bangKapi"),
+  ];
 
   const conversationHistory = useMemo(
     () => messages.slice(-10),
@@ -92,7 +92,7 @@ export function UserAssistantPanel({
           className="rounded-full px-4 py-3 shadow-xl shadow-brand/20 md:px-5"
         >
           <MessageCircle className="mr-2 h-4 w-4" />
-          Ask BusBuddy AI
+          {t("ai.open")}
         </Button>
       </div>
 
@@ -105,10 +105,10 @@ export function UserAssistantPanel({
               </div>
               <div>
                 <p className="text-sm font-semibold uppercase tracking-[0.14em] text-brand">
-                  User Assistant
+                  {t("ai.title")}
                 </p>
                 <p className="mt-1 text-sm text-gray-600">
-                  Route, ETA, and nearby stop help from BusBuddy backend data only
+                  {t("ai.subtitle")}
                 </p>
               </div>
             </div>
@@ -126,7 +126,7 @@ export function UserAssistantPanel({
           <div className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
             {selectedStop ? (
               <div className="rounded-2xl border border-orange-100 bg-orange-50 px-4 py-3 text-xs text-orange-900">
-                Focus stop: <span className="font-semibold">{selectedStop.name}</span>
+                <span className="font-semibold">{t("ai.focusStop", { name: selectedStop.name })}</span>
               </div>
             ) : null}
 
@@ -145,7 +145,7 @@ export function UserAssistantPanel({
 
             {isLoading ? (
               <div className="max-w-[88%] rounded-2xl bg-gray-100 px-4 py-3 text-sm text-gray-600">
-                Thinking with live transit data...
+                {t("ai.thinking")}
               </div>
             ) : null}
 
@@ -158,7 +158,7 @@ export function UserAssistantPanel({
 
           <div className="border-t border-gray-100 px-4 py-4">
             <div className="mb-3 flex flex-wrap gap-2">
-              {SUGGESTIONS.map((suggestion) => (
+              {suggestions.map((suggestion) => (
                 <button
                   key={suggestion}
                   type="button"
@@ -181,7 +181,7 @@ export function UserAssistantPanel({
               <textarea
                 value={inputValue}
                 onChange={(event) => setInputValue(event.target.value)}
-                placeholder="Ask about nearby stops, ETA, or which route to take..."
+                placeholder={t("ai.placeholder")}
                 rows={2}
                 className="min-h-[52px] flex-1 resize-none rounded-2xl border border-gray-200 px-4 py-3 text-sm text-gray-900 outline-none transition-colors focus:border-brand"
               />
