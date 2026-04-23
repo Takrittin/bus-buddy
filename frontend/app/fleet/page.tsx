@@ -23,6 +23,7 @@ import { BottomNav } from "@/components/navigation/BottomNav";
 import { BusDetailSheet } from "@/components/buses/BusDetailSheet";
 import { FleetAssistantPanel } from "@/components/ai/FleetAssistantPanel";
 import { Button } from "@/components/ui/Button";
+import { CalendarField } from "@/components/ui/CalendarField";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { useAuth } from "@/hooks/auth/useAuth";
 import { useFleetOperations } from "@/hooks/useFleetOperations";
@@ -624,6 +625,8 @@ export default function FleetPage() {
       return true;
     });
   }, [deferredShiftSearchQuery, shiftDateFrom, shiftDateTo, shifts]);
+  const hasActiveShiftFilters =
+    deferredShiftSearchQuery.length > 0 || Boolean(shiftDateFrom) || Boolean(shiftDateTo);
 
   const sortedShifts = useMemo(
     () =>
@@ -1507,35 +1510,27 @@ export default function FleetPage() {
                         </div>
 
                         <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
-                          <label className="block">
-                            <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
-                              {t("fleet.shiftStart")}
-                            </span>
-                            <input
-                              type="datetime-local"
-                              value={shiftForm.shiftStartAt}
-                              onChange={(event) =>
-                                handleShiftFormChange("shiftStartAt", event.target.value)
-                              }
-                              className="w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 outline-none transition-colors focus:border-brand"
-                              required
-                            />
-                          </label>
+                          <CalendarField
+                            label={t("fleet.shiftStart")}
+                            mode="datetime"
+                            value={shiftForm.shiftStartAt}
+                            onChange={(nextValue) =>
+                              handleShiftFormChange("shiftStartAt", nextValue)
+                            }
+                            placeholder={t("fleet.shiftStart")}
+                            required
+                          />
 
-                          <label className="block">
-                            <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
-                              {t("fleet.shiftEnd")}
-                            </span>
-                            <input
-                              type="datetime-local"
-                              value={shiftForm.shiftEndAt}
-                              onChange={(event) =>
-                                handleShiftFormChange("shiftEndAt", event.target.value)
-                              }
-                              className="w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 outline-none transition-colors focus:border-brand"
-                              required
-                            />
-                          </label>
+                          <CalendarField
+                            label={t("fleet.shiftEnd")}
+                            mode="datetime"
+                            value={shiftForm.shiftEndAt}
+                            onChange={(nextValue) =>
+                              handleShiftFormChange("shiftEndAt", nextValue)
+                            }
+                            placeholder={t("fleet.shiftEnd")}
+                            required
+                          />
                         </div>
 
                         <label className="block">
@@ -1597,16 +1592,7 @@ export default function FleetPage() {
                         </div>
                       </div>
 
-                      {sortedShifts.length === 0 ? (
-                        <div className="mt-5">
-                          <EmptyState
-                            icon={<ClipboardList className="mx-auto h-12 w-12" />}
-                            title={t("fleet.noDriverShiftsTitle")}
-                            description={t("fleet.noDriverShiftsDescription")}
-                          />
-                        </div>
-                      ) : (
-                        <div className="mt-5">
+                      <div className="mt-5">
                           <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                             <div className="text-sm text-gray-500">
                               {t("fleet.shiftPageSummary", {
@@ -1635,35 +1621,27 @@ export default function FleetPage() {
                                   </div>
                                 </label>
 
-                                <label className="block">
-                                  <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
-                                    {t("fleet.shiftDateFrom")}
-                                  </span>
-                                  <input
-                                    type="date"
-                                    value={shiftDateFrom}
-                                    onChange={(event) => {
-                                      setShiftDateFrom(event.target.value);
-                                      setShiftPage(1);
-                                    }}
-                                    className="w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 outline-none transition-colors focus:border-brand"
-                                  />
-                                </label>
+                                <CalendarField
+                                  label={t("fleet.shiftDateFrom")}
+                                  value={shiftDateFrom}
+                                  onChange={(nextValue) => {
+                                    setShiftDateFrom(nextValue);
+                                    setShiftPage(1);
+                                  }}
+                                  placeholder={t("fleet.shiftDateFrom")}
+                                  clearable
+                                />
 
-                                <label className="block">
-                                  <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
-                                    {t("fleet.shiftDateTo")}
-                                  </span>
-                                  <input
-                                    type="date"
-                                    value={shiftDateTo}
-                                    onChange={(event) => {
-                                      setShiftDateTo(event.target.value);
-                                      setShiftPage(1);
-                                    }}
-                                    className="w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 outline-none transition-colors focus:border-brand"
-                                  />
-                                </label>
+                                <CalendarField
+                                  label={t("fleet.shiftDateTo")}
+                                  value={shiftDateTo}
+                                  onChange={(nextValue) => {
+                                    setShiftDateTo(nextValue);
+                                    setShiftPage(1);
+                                  }}
+                                  placeholder={t("fleet.shiftDateTo")}
+                                  clearable
+                                />
 
                                 <div className="flex items-end">
                                   <Button
@@ -1710,111 +1688,135 @@ export default function FleetPage() {
                             </div>
                           </div>
 
-                        <div className="overflow-x-auto">
-                          <table className="min-w-full divide-y divide-gray-100 text-sm">
-                            <thead>
-                              <tr className="text-left text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
-                                <th className="px-4 py-3">{t("fleet.driver")}</th>
-                                <th className="px-4 py-3">{t("fleet.bus")}</th>
-                                <th className="px-4 py-3">{t("common.route")}</th>
-                                <th className="px-4 py-3">{t("fleet.window")}</th>
-                                <th className="px-4 py-3">{t("common.status")}</th>
-                                <th className="px-4 py-3">{t("common.notes")}</th>
-                                <th className="px-4 py-3 text-right">{t("fleet.actions")}</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-gray-100">
-                              {paginatedShifts.map((shift) => (
-                                <tr key={shift.id} className="align-top">
-                                  <td className="px-4 py-4">
-                                    <p className="font-semibold text-gray-900">
-                                      {shift.driverName ?? shift.driverId}
-                                    </p>
-                                    <p className="mt-1 text-xs text-gray-500">{shift.driverId}</p>
-                                  </td>
-                                  <td className="px-4 py-4">
-                                    <p className="font-semibold text-gray-900">
-                                      {shift.busVehicleNumber ?? shift.busId}
-                                    </p>
-                                    <p className="mt-1 text-xs text-gray-500">
-                                      {shift.busLicensePlate ?? shift.busId}
-                                    </p>
-                                  </td>
-                                  <td className="px-4 py-4">
-                                    <p className="font-semibold text-gray-900">
-                                      {t("common.route")} {shift.routeNumber ?? shift.routeId}
-                                    </p>
-                                    <p className="mt-1 text-xs capitalize text-gray-500">
-                                      {formatDirection(shift.direction, t)}
-                                    </p>
-                                  </td>
-                                  <td className="px-4 py-4">
-                                    <div className="flex items-start gap-2 text-gray-700">
-                                      <CalendarRange className="mt-0.5 h-4 w-4 text-gray-400" />
-                                      <div>
-                                        <p className="font-medium text-gray-900">
-                                          {formatShiftDateRange(
-                                            shift.shiftStartAt,
-                                            shift.shiftEndAt,
-                                          )}
+                          {sortedShifts.length === 0 ? (
+                            <div className="mt-5">
+                              <EmptyState
+                                icon={<ClipboardList className="mx-auto h-12 w-12" />}
+                                title={
+                                  hasActiveShiftFilters
+                                    ? t("fleet.noFilteredShiftsTitle")
+                                    : t("fleet.noDriverShiftsTitle")
+                                }
+                                description={
+                                  hasActiveShiftFilters
+                                    ? t("fleet.noFilteredShiftsDescription")
+                                    : t("fleet.noDriverShiftsDescription")
+                                }
+                                action={
+                                  hasActiveShiftFilters ? (
+                                    <Button variant="outline" onClick={clearShiftFilters}>
+                                      {t("fleet.clearShiftFilters")}
+                                    </Button>
+                                  ) : undefined
+                                }
+                              />
+                            </div>
+                          ) : (
+                            <div className="overflow-x-auto">
+                              <table className="min-w-full divide-y divide-gray-100 text-sm">
+                                <thead>
+                                  <tr className="text-left text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
+                                    <th className="px-4 py-3">{t("fleet.driver")}</th>
+                                    <th className="px-4 py-3">{t("fleet.bus")}</th>
+                                    <th className="px-4 py-3">{t("common.route")}</th>
+                                    <th className="px-4 py-3">{t("fleet.window")}</th>
+                                    <th className="px-4 py-3">{t("common.status")}</th>
+                                    <th className="px-4 py-3">{t("common.notes")}</th>
+                                    <th className="px-4 py-3 text-right">{t("fleet.actions")}</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-100">
+                                  {paginatedShifts.map((shift) => (
+                                    <tr key={shift.id} className="align-top">
+                                      <td className="px-4 py-4">
+                                        <p className="font-semibold text-gray-900">
+                                          {shift.driverName ?? shift.driverId}
+                                        </p>
+                                        <p className="mt-1 text-xs text-gray-500">{shift.driverId}</p>
+                                      </td>
+                                      <td className="px-4 py-4">
+                                        <p className="font-semibold text-gray-900">
+                                          {shift.busVehicleNumber ?? shift.busId}
                                         </p>
                                         <p className="mt-1 text-xs text-gray-500">
-                                          {t("fleet.checkIn", {
-                                            time: shift.checkInAt
-                                              ? new Date(shift.checkInAt).toLocaleTimeString([], {
-                                                  hour: "2-digit",
-                                                  minute: "2-digit",
-                                                })
-                                              : "--",
-                                          })}
+                                          {shift.busLicensePlate ?? shift.busId}
                                         </p>
-                                      </div>
-                                    </div>
-                                  </td>
-                                  <td className="px-4 py-4">
-                                    <span
-                                      className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.08em] ${getShiftStatusBadgeClass(
-                                        shift.status,
-                                      )}`}
-                                    >
-                                      {formatShiftStatus(shift.status, t)}
-                                    </span>
-                                  </td>
-                                  <td className="max-w-[240px] px-4 py-4 text-gray-600">
-                                    {shift.notes ?? t("fleet.noNotes")}
-                                  </td>
-                                  <td className="px-4 py-4">
-                                    <div className="flex justify-end gap-2">
-                                      <Button
-                                        type="button"
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={() => startEditingShift(shift)}
-                                      >
-                                        <PenSquare className="mr-2 h-4 w-4" />
-                                        {t("common.edit")}
-                                      </Button>
-                                      {shift.status === "ACTIVE" || shift.status === "SCHEDULED" ? (
-                                        <Button
-                                          type="button"
-                                          variant="ghost"
-                                          size="sm"
-                                          onClick={() => handleCloseShift(shift)}
-                                          disabled={isSubmittingShift}
+                                      </td>
+                                      <td className="px-4 py-4">
+                                        <p className="font-semibold text-gray-900">
+                                          {t("common.route")} {shift.routeNumber ?? shift.routeId}
+                                        </p>
+                                        <p className="mt-1 text-xs capitalize text-gray-500">
+                                          {formatDirection(shift.direction, t)}
+                                        </p>
+                                      </td>
+                                      <td className="px-4 py-4">
+                                        <div className="flex items-start gap-2 text-gray-700">
+                                          <CalendarRange className="mt-0.5 h-4 w-4 text-gray-400" />
+                                          <div>
+                                            <p className="font-medium text-gray-900">
+                                              {formatShiftDateRange(
+                                                shift.shiftStartAt,
+                                                shift.shiftEndAt,
+                                              )}
+                                            </p>
+                                            <p className="mt-1 text-xs text-gray-500">
+                                              {t("fleet.checkIn", {
+                                                time: shift.checkInAt
+                                                  ? new Date(shift.checkInAt).toLocaleTimeString([], {
+                                                      hour: "2-digit",
+                                                      minute: "2-digit",
+                                                    })
+                                                  : "--",
+                                              })}
+                                            </p>
+                                          </div>
+                                        </div>
+                                      </td>
+                                      <td className="px-4 py-4">
+                                        <span
+                                          className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.08em] ${getShiftStatusBadgeClass(
+                                            shift.status,
+                                          )}`}
                                         >
-                                          <XCircle className="mr-2 h-4 w-4" />
-                                          {t("common.close")}
-                                        </Button>
-                                      ) : null}
-                                    </div>
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                        </div>
-                      )}
+                                          {formatShiftStatus(shift.status, t)}
+                                        </span>
+                                      </td>
+                                      <td className="max-w-[240px] px-4 py-4 text-gray-600">
+                                        {shift.notes ?? t("fleet.noNotes")}
+                                      </td>
+                                      <td className="px-4 py-4">
+                                        <div className="flex justify-end gap-2">
+                                          <Button
+                                            type="button"
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() => startEditingShift(shift)}
+                                          >
+                                            <PenSquare className="mr-2 h-4 w-4" />
+                                            {t("common.edit")}
+                                          </Button>
+                                          {shift.status === "ACTIVE" || shift.status === "SCHEDULED" ? (
+                                            <Button
+                                              type="button"
+                                              variant="ghost"
+                                              size="sm"
+                                              onClick={() => handleCloseShift(shift)}
+                                              disabled={isSubmittingShift}
+                                            >
+                                              <XCircle className="mr-2 h-4 w-4" />
+                                              {t("common.close")}
+                                            </Button>
+                                          ) : null}
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                      </div>
                     </div>
                   </section>
                 ) : null}
