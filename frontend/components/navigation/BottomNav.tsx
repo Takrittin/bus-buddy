@@ -18,7 +18,7 @@ export function BottomNav() {
     { name: t("nav.settings"), href: "/settings", icon: Settings },
   ];
   const fleetTab = { name: t("nav.fleet"), href: "/fleet", icon: BusFront };
-  const adminTab = { name: "Admin", href: "/admin", icon: Shield };
+  const adminTab = { name: t("nav.admin"), href: "/admin", icon: Shield };
   const fleetTabs = [
     { name: t("nav.map"), href: "/", icon: Map },
     fleetTab,

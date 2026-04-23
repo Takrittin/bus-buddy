@@ -19,6 +19,7 @@ import { useAuth } from "@/hooks/auth/useAuth";
 import { AdminUserRecord, AuditLogRecord, SystemHealthSnapshot } from "@/types/admin";
 import { UserRole } from "@/types/auth";
 import { formatUserRole } from "@/lib/auth/roles";
+import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { Activity, Database, RefreshCw, Shield, UserCog, Users, Wifi } from "lucide-react";
 
 type EditableUser = Record<
@@ -34,6 +35,7 @@ type EditableUser = Record<
 
 export default function AdminPage() {
   const router = useRouter();
+  const { locale, t } = useLanguage();
   const { user: currentUser, isAuthenticated, isLoading, isAdmin } = useAuth();
   const [users, setUsers] = useState<AdminUserRecord[]>([]);
   const [health, setHealth] = useState<SystemHealthSnapshot | null>(null);
@@ -85,7 +87,7 @@ export default function AdminPage() {
         ),
       );
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Unable to load admin data.");
+      setError(loadError instanceof Error ? loadError.message : t("admin.loadError"));
     } finally {
       setIsRefreshing(false);
     }
@@ -163,6 +165,32 @@ export default function AdminPage() {
     return reason?.trim() || null;
   };
 
+  const formatDateTime = (value: string | null | undefined) => {
+    if (!value) {
+      return t("admin.never");
+    }
+
+    return new Date(value).toLocaleString(locale === "th" ? "th-TH" : "en-US");
+  };
+
+  const formatHealthStatus = (value: string | null | undefined) => {
+    const normalizedValue = value?.toLowerCase();
+    const statusLabels: Record<string, string> = {
+      online: t("admin.statusOnline"),
+      offline: t("admin.statusOffline"),
+      starting: t("admin.statusStarting"),
+      degraded: t("admin.statusDegraded"),
+      pending: t("admin.statusPending"),
+      success: t("admin.statusSuccess"),
+      failed: t("admin.statusFailed"),
+      skipped: t("admin.statusSkipped"),
+    };
+
+    return normalizedValue
+      ? statusLabels[normalizedValue] ?? value ?? t("admin.checking")
+      : t("admin.checking");
+  };
+
   const handleSaveUser = async (userId: string) => {
     const draft = draftUsers[userId];
     const originalUser = users.find((user) => user.id === userId);
@@ -178,13 +206,13 @@ export default function AdminPage() {
     const resetFlagAdded = draft.mustResetPassword && !originalUser.mustResetPassword;
 
     if (isSelf && (draft.role !== "ADMIN" || draft.isActive === false)) {
-      setError("You cannot demote or disable your own admin account.");
+      setError(t("admin.selfProtectionError"));
       return;
     }
 
     if (promotedToAdmin || disabledAccount) {
       const confirmed = window.confirm(
-        `${promotedToAdmin ? "Promote this user to ADMIN" : "Disable this account"}?\n\nThis will revoke existing sessions.`,
+        promotedToAdmin ? t("admin.promoteConfirm") : t("admin.disableConfirm"),
       );
 
       if (!confirmed) {
@@ -194,7 +222,7 @@ export default function AdminPage() {
 
     const reason =
       roleChanged || disabledAccount || resetFlagAdded
-        ? getReason("Reason for this admin action? This will be saved in the audit log.")
+        ? getReason(t("admin.adminActionReason"))
         : null;
 
     if ((roleChanged || disabledAccount || resetFlagAdded) && !reason) {
@@ -212,18 +240,18 @@ export default function AdminPage() {
         currentUsers.map((user) => (user.id === userId ? updatedUser : user)),
       );
     } catch (updateError) {
-      setError(updateError instanceof Error ? updateError.message : "Unable to update user.");
+      setError(updateError instanceof Error ? updateError.message : t("admin.updateError"));
     }
   };
 
   const handleResetPassword = async (user: AdminUserRecord) => {
-    const newPassword = window.prompt(`Set a new temporary password for ${user.email}`);
+    const newPassword = window.prompt(t("admin.resetPasswordPrompt", { email: user.email }));
 
     if (!newPassword) {
       return;
     }
 
-    const reason = getReason("Reason for resetting this password? This will revoke sessions.");
+    const reason = getReason(t("admin.resetPasswordReason"));
 
     if (!reason) {
       return;
@@ -238,26 +266,26 @@ export default function AdminPage() {
       await loadAdminData();
     } catch (resetError) {
       setError(
-        resetError instanceof Error ? resetError.message : "Unable to reset password.",
+        resetError instanceof Error ? resetError.message : t("admin.resetError"),
       );
     }
   };
 
   const handleDeleteUser = async (user: AdminUserRecord) => {
     if (currentUser?.id === user.id) {
-      setError("You cannot delete your own admin account.");
+      setError(t("admin.selfDeleteError"));
       return;
     }
 
     const confirmed = window.confirm(
-      `Soft delete ${user.email}?\n\nThe account will be disabled and sessions revoked, but audit history will be kept.`,
+      t("admin.deleteConfirm", { email: user.email }),
     );
 
     if (!confirmed) {
       return;
     }
 
-    const reason = getReason("Reason for soft deleting this account?");
+    const reason = getReason(t("admin.deleteReason"));
 
     if (!reason) {
       return;
@@ -267,7 +295,7 @@ export default function AdminPage() {
       await deleteAdminUser(user.id, { reason });
       await loadAdminData();
     } catch (deleteError) {
-      setError(deleteError instanceof Error ? deleteError.message : "Unable to delete user.");
+      setError(deleteError instanceof Error ? deleteError.message : t("admin.deleteError"));
     }
   };
 
@@ -286,7 +314,7 @@ export default function AdminPage() {
       await loadAdminData();
     } catch (createError) {
       setError(
-        createError instanceof Error ? createError.message : "Unable to create fleet account.",
+        createError instanceof Error ? createError.message : t("admin.createFleetError"),
       );
     }
   };
@@ -294,7 +322,7 @@ export default function AdminPage() {
   if (isLoading || (!isAuthenticated && !error)) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-gray-50 text-gray-500">
-        Loading admin workspace...
+        {t("admin.loading")}
       </div>
     );
   }
@@ -312,17 +340,17 @@ export default function AdminPage() {
               <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                 <div>
                   <p className="text-sm font-semibold uppercase tracking-[0.16em] text-brand">
-                    Admin
+                    {t("admin.eyebrow")}
                   </p>
-                  <h1 className="mt-2 text-3xl font-bold text-gray-900">Admin Console</h1>
+                  <h1 className="mt-2 text-3xl font-bold text-gray-900">{t("admin.title")}</h1>
                   <p className="mt-2 max-w-3xl text-sm text-gray-500">
-                    Manage users, fleet accounts, system health, and audit logs from one place.
+                    {t("admin.subtitle")}
                   </p>
                 </div>
 
                 <Button variant="outline" onClick={() => void loadAdminData()}>
                   <RefreshCw className="mr-2 h-4 w-4" />
-                  {isRefreshing ? "Refreshing..." : "Refresh"}
+                  {isRefreshing ? t("admin.refreshing") : t("admin.refresh")}
                 </Button>
               </div>
 
@@ -336,27 +364,29 @@ export default function AdminPage() {
             <section className="grid gap-4 md:grid-cols-4">
               <HealthCard
                 icon={Users}
-                title="Active users"
+                title={t("admin.activeUsers")}
                 value={String(stats.activeUsers)}
-                detail={`${stats.fleetAccounts} fleet accounts`}
+                detail={t("admin.fleetAccounts", { count: stats.fleetAccounts })}
               />
               <HealthCard
                 icon={Shield}
-                title="Password resets"
+                title={t("admin.passwordResets")}
                 value={String(stats.passwordResetUsers)}
-                detail="Accounts that must change password"
+                detail={t("admin.passwordResetDetail")}
               />
               <HealthCard
                 icon={Database}
-                title="Database"
-                value={health?.database.status ?? "checking"}
-                detail={health?.transitSync.message ?? "Waiting for health snapshot"}
+                title={t("admin.database")}
+                value={formatHealthStatus(health?.database.status)}
+                detail={health?.transitSync.message ?? t("admin.waitingHealth")}
               />
               <HealthCard
                 icon={Wifi}
-                title="Realtime"
-                value={health?.realtime.websocketStatus ?? "checking"}
-                detail={`${health?.realtime.activeShiftCount ?? 0} active/scheduled shifts`}
+                title={t("admin.realtime")}
+                value={formatHealthStatus(health?.realtime.websocketStatus)}
+                detail={t("admin.activeScheduledShifts", {
+                  count: health?.realtime.activeShiftCount ?? 0,
+                })}
               />
             </section>
 
@@ -367,9 +397,11 @@ export default function AdminPage() {
                     <UserCog className="h-5 w-5" />
                   </div>
                   <div>
-                    <h2 className="text-2xl font-bold text-gray-900">User Management</h2>
+                    <h2 className="text-2xl font-bold text-gray-900">
+                      {t("admin.userManagement")}
+                    </h2>
                     <p className="mt-1 text-sm text-gray-500">
-                      Review users, change roles, disable accounts, and require password resets.
+                      {t("admin.userManagementSubtitle")}
                     </p>
                   </div>
                 </div>
@@ -378,7 +410,7 @@ export default function AdminPage() {
                   <input
                     value={userSearchQuery}
                     onChange={(event) => setUserSearchQuery(event.target.value)}
-                    placeholder="Search by name or email"
+                    placeholder={t("admin.searchUsersPlaceholder")}
                     className="rounded-2xl border border-gray-200 px-4 py-3 text-sm outline-none transition-colors focus:border-brand"
                   />
                   <select
@@ -386,10 +418,10 @@ export default function AdminPage() {
                     onChange={(event) => setRoleFilter(event.target.value as "all" | UserRole)}
                     className="rounded-2xl border border-gray-200 px-4 py-3 text-sm outline-none transition-colors focus:border-brand"
                   >
-                    <option value="all">All roles</option>
-                    <option value="USER">User</option>
-                    <option value="FLEET">Fleet</option>
-                    <option value="ADMIN">Admin</option>
+                    <option value="all">{t("admin.allRoles")}</option>
+                    <option value="USER">{formatUserRole("USER", locale)}</option>
+                    <option value="FLEET">{formatUserRole("FLEET", locale)}</option>
+                    <option value="ADMIN">{formatUserRole("ADMIN", locale)}</option>
                   </select>
                   <select
                     value={statusFilter}
@@ -398,10 +430,10 @@ export default function AdminPage() {
                     }
                     className="rounded-2xl border border-gray-200 px-4 py-3 text-sm outline-none transition-colors focus:border-brand"
                   >
-                    <option value="all">All statuses</option>
-                    <option value="active">Active</option>
-                    <option value="disabled">Disabled</option>
-                    <option value="deleted">Deleted</option>
+                    <option value="all">{t("admin.allStatuses")}</option>
+                    <option value="active">{t("admin.active")}</option>
+                    <option value="disabled">{t("admin.disabled")}</option>
+                    <option value="deleted">{t("admin.deleted")}</option>
                   </select>
                 </div>
 
@@ -409,11 +441,11 @@ export default function AdminPage() {
                   <table className="min-w-full divide-y divide-gray-100 text-left text-sm">
                     <thead>
                       <tr className="text-xs uppercase tracking-[0.14em] text-gray-500">
-                        <th className="px-3 py-3">User</th>
-                        <th className="px-3 py-3">Role</th>
-                        <th className="px-3 py-3">Status</th>
-                        <th className="px-3 py-3">Signals</th>
-                        <th className="px-3 py-3">Actions</th>
+                        <th className="px-3 py-3">{t("admin.user")}</th>
+                        <th className="px-3 py-3">{t("admin.role")}</th>
+                        <th className="px-3 py-3">{t("admin.status")}</th>
+                        <th className="px-3 py-3">{t("admin.signals")}</th>
+                        <th className="px-3 py-3">{t("admin.actions")}</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
@@ -426,15 +458,19 @@ export default function AdminPage() {
                           <tr key={user.id} className={`align-top ${isDeleted ? "bg-gray-50 opacity-75" : ""}`}>
                             <td className="px-3 py-4">
                               <p className="font-semibold text-gray-900">
-                                {user.name || "Unnamed user"}
+                                {user.name || t("admin.unnamedUser")}
                               </p>
                               <p className="mt-1 text-xs text-gray-500">{user.email}</p>
                               <p className="mt-2 text-xs text-gray-400">
-                                Last login: {user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString() : "Never"}
+                                {t("admin.lastLogin", {
+                                  value: formatDateTime(user.lastLoginAt),
+                                })}
                               </p>
                               {isDeleted ? (
                                 <p className="mt-2 text-xs font-semibold text-red-600">
-                                  Deleted {new Date(user.deletedAt as string).toLocaleString()}
+                                  {t("admin.deletedAt", {
+                                    value: formatDateTime(user.deletedAt),
+                                  })}
                                 </p>
                               ) : null}
                             </td>
@@ -455,7 +491,7 @@ export default function AdminPage() {
                               >
                                 {(["USER", "FLEET", "ADMIN"] as UserRole[]).map((role) => (
                                   <option key={role} value={role}>
-                                    {formatUserRole(role)}
+                                    {formatUserRole(role, locale)}
                                   </option>
                                 ))}
                               </select>
@@ -476,7 +512,7 @@ export default function AdminPage() {
                                     }))
                                   }
                                 />
-                                Active
+                                {t("admin.active")}
                               </label>
                               <label className="flex items-center gap-2 text-xs text-gray-600">
                                 <input
@@ -493,12 +529,18 @@ export default function AdminPage() {
                                     }))
                                   }
                                 />
-                                Force password reset
+                                {t("admin.forcePasswordReset")}
                               </label>
                             </td>
                             <td className="px-3 py-4 text-xs text-gray-500">
-                              <p>{user.favoriteStopCount} favorite stops</p>
-                              <p className="mt-1">{user.notificationCount} alert subscriptions</p>
+                              <p>
+                                {t("admin.favoriteStops", { count: user.favoriteStopCount })}
+                              </p>
+                              <p className="mt-1">
+                                {t("admin.alertSubscriptions", {
+                                  count: user.notificationCount,
+                                })}
+                              </p>
                             </td>
                             <td className="space-y-2 px-3 py-4">
                               <Button
@@ -507,7 +549,7 @@ export default function AdminPage() {
                                 disabled={isDeleted}
                                 onClick={() => void handleSaveUser(user.id)}
                               >
-                                Save
+                                {t("admin.save")}
                               </Button>
                               <Button
                                 variant="outline"
@@ -515,7 +557,7 @@ export default function AdminPage() {
                                 disabled={isDeleted}
                                 onClick={() => void handleResetPassword(user)}
                               >
-                                Reset Password
+                                {t("admin.resetPassword")}
                               </Button>
                               <Button
                                 variant="ghost"
@@ -523,7 +565,7 @@ export default function AdminPage() {
                                 disabled={isDeleted || isSelf}
                                 onClick={() => void handleDeleteUser(user)}
                               >
-                                Delete User
+                                {t("admin.deleteUser")}
                               </Button>
                             </td>
                           </tr>
@@ -536,9 +578,11 @@ export default function AdminPage() {
 
               <div className="space-y-6">
                 <section className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
-                  <h2 className="text-2xl font-bold text-gray-900">Create Fleet Manager</h2>
+                  <h2 className="text-2xl font-bold text-gray-900">
+                    {t("admin.createFleetManager")}
+                  </h2>
                   <p className="mt-2 text-sm text-gray-500">
-                    Create scoped fleet accounts and bind them to an operator and depot.
+                    {t("admin.createFleetManagerSubtitle")}
                   </p>
 
                   <form className="mt-5 space-y-3" onSubmit={handleCreateFleetAccount}>
@@ -547,7 +591,7 @@ export default function AdminPage() {
                       onChange={(event) =>
                         setFleetForm((current) => ({ ...current, name: event.target.value }))
                       }
-                      placeholder="Full name"
+                      placeholder={t("admin.fullName")}
                       className="w-full rounded-2xl border border-gray-200 px-4 py-3"
                     />
                     <input
@@ -566,7 +610,7 @@ export default function AdminPage() {
                       onChange={(event) =>
                         setFleetForm((current) => ({ ...current, password: event.target.value }))
                       }
-                      placeholder="Temporary password"
+                      placeholder={t("admin.temporaryPassword")}
                       required
                       minLength={8}
                       className="w-full rounded-2xl border border-gray-200 px-4 py-3"
@@ -579,7 +623,7 @@ export default function AdminPage() {
                           operatorName: event.target.value,
                         }))
                       }
-                      placeholder="Operator"
+                      placeholder={t("admin.operator")}
                       className="w-full rounded-2xl border border-gray-200 px-4 py-3"
                     />
                     <input
@@ -590,12 +634,12 @@ export default function AdminPage() {
                           depotName: event.target.value,
                         }))
                       }
-                      placeholder="Depot"
+                      placeholder={t("admin.depot")}
                       className="w-full rounded-2xl border border-gray-200 px-4 py-3"
                     />
 
                     <Button variant="primary" className="w-full" type="submit">
-                      Create Fleet Account
+                      {t("admin.createFleetAccount")}
                     </Button>
                   </form>
                 </section>
@@ -603,23 +647,31 @@ export default function AdminPage() {
                 <section className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
                   <div className="flex items-center gap-3">
                     <Activity className="h-5 w-5 text-brand" />
-                    <h2 className="text-2xl font-bold text-gray-900">System Health</h2>
+                    <h2 className="text-2xl font-bold text-gray-900">
+                      {t("admin.systemHealth")}
+                    </h2>
                   </div>
                   <div className="mt-5 space-y-3 text-sm">
-                    <HealthRow label="Backend" value={health?.backend.status ?? "Checking"} />
-                    <HealthRow label="Database" value={health?.database.status ?? "Checking"} />
                     <HealthRow
-                      label="Transit sync"
-                      value={health?.transitSync.status ?? "Checking"}
+                      label={t("admin.backend")}
+                      value={formatHealthStatus(health?.backend.status)}
+                    />
+                    <HealthRow
+                      label={t("admin.database")}
+                      value={formatHealthStatus(health?.database.status)}
+                    />
+                    <HealthRow
+                      label={t("admin.transitSync")}
+                      value={formatHealthStatus(health?.transitSync.status)}
                       detail={health?.transitSync.message}
                     />
                     <HealthRow
-                      label="WebSocket"
-                      value={health?.realtime.websocketStatus ?? "Checking"}
+                      label={t("admin.websocket")}
+                      value={formatHealthStatus(health?.realtime.websocketStatus)}
                     />
                     <HealthRow
-                      label="AI service"
-                      value={health?.ai.status ?? "Checking"}
+                      label={t("admin.aiService")}
+                      value={formatHealthStatus(health?.ai.status)}
                       detail={health?.ai.model}
                     />
                   </div>
@@ -628,9 +680,9 @@ export default function AdminPage() {
             </section>
 
             <section className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
-              <h2 className="text-2xl font-bold text-gray-900">Audit Log</h2>
+              <h2 className="text-2xl font-bold text-gray-900">{t("admin.auditLog")}</h2>
               <p className="mt-2 text-sm text-gray-500">
-                Recent system changes, role updates, password resets, and transit sync events.
+                {t("admin.auditLogSubtitle")}
               </p>
 
               <div className="mt-6 grid gap-3 md:grid-cols-4">
@@ -641,14 +693,14 @@ export default function AdminPage() {
                 >
                   {auditActionOptions.map((action) => (
                     <option key={action} value={action}>
-                      {action === "all" ? "All actions" : action}
+                      {action === "all" ? t("admin.allActions") : action}
                     </option>
                   ))}
                 </select>
                 <input
                   value={auditActorQuery}
                   onChange={(event) => setAuditActorQuery(event.target.value)}
-                  placeholder="Actor email"
+                  placeholder={t("admin.actorEmail")}
                   className="rounded-2xl border border-gray-200 px-4 py-3 text-sm outline-none transition-colors focus:border-brand"
                 />
                 <input
@@ -669,20 +721,20 @@ export default function AdminPage() {
                 <table className="min-w-full divide-y divide-gray-100 text-left text-sm">
                   <thead>
                     <tr className="text-xs uppercase tracking-[0.14em] text-gray-500">
-                      <th className="px-3 py-3">When</th>
-                      <th className="px-3 py-3">Actor</th>
-                      <th className="px-3 py-3">Action</th>
-                      <th className="px-3 py-3">Summary</th>
+                      <th className="px-3 py-3">{t("admin.when")}</th>
+                      <th className="px-3 py-3">{t("admin.actor")}</th>
+                      <th className="px-3 py-3">{t("admin.action")}</th>
+                      <th className="px-3 py-3">{t("admin.summary")}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
                     {filteredAuditLogs.map((log) => (
                       <tr key={log.id}>
                         <td className="px-3 py-3 text-gray-500">
-                          {new Date(log.createdAt).toLocaleString()}
+                          {formatDateTime(log.createdAt)}
                         </td>
                         <td className="px-3 py-3 text-gray-700">
-                          {log.actorEmail || "System"}
+                          {log.actorEmail || t("admin.systemActor")}
                         </td>
                         <td className="px-3 py-3 font-medium text-gray-900">{log.action}</td>
                         <td className="px-3 py-3 text-gray-600">
@@ -693,7 +745,7 @@ export default function AdminPage() {
                           typeof log.metadata.reason === "string" &&
                           log.metadata.reason ? (
                             <p className="mt-1 text-xs text-gray-400">
-                              Reason: {log.metadata.reason}
+                              {t("admin.reason", { value: log.metadata.reason })}
                             </p>
                           ) : null}
                         </td>

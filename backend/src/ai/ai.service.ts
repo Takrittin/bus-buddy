@@ -20,17 +20,26 @@ type AssistantToolSet = {
   declarations: FunctionDeclaration[];
   handlers: Record<string, ToolCallHandler>;
 };
+type AssistantVerifiedToolResult = {
+  name: string;
+  result: unknown;
+};
 type AssistantResponsePayload = {
   message: string;
   tool_calls: string[];
   model: string;
   summary: string;
 };
+type UserAssistantIntent = 'nearby' | 'stop' | 'route' | 'live_buses' | 'eta' | 'general';
+type FleetAssistantIntent = 'overview' | 'route_health' | 'buses' | 'shifts' | 'assignment' | 'general';
+type AdminAssistantIntent = 'users' | 'health' | 'audit' | 'general';
+type AutoToolCall = { name: string; args: Record<string, unknown> };
 
 const USER_ASSISTANT_MODEL = process.env.GOOGLE_AI_MODEL ?? 'gemini-2.5-flash';
 const MAX_HISTORY_MESSAGES = 4;
 const MAX_HISTORY_MESSAGE_CHARS = 240;
 const MAX_TOOL_LOOPS = 3;
+const MAX_VERIFIED_TOOL_RESULT_CHARS = 1600;
 const SMALL_TALK_PATTERN =
   /^(hi|hello|hey|thanks|thank you|ok|okay|สวัสดี|หวัดดี|ขอบคุณ|โอเค|ครับ|ค่ะ|คับ|จ้า)[!.?\s]*$/i;
 
@@ -59,11 +68,23 @@ export class AiService {
   }
 
   async replyToUserAssistant(userAssistantDto: UserAssistantDto) {
+    const baseTools = this.getUserTools();
+    const intent = this.routeUserIntent(userAssistantDto);
+    const tools = this.pickTools(
+      baseTools,
+      this.getUserToolNamesForIntent(intent, userAssistantDto),
+    );
+    const verifiedToolResults = await this.runVerifiedToolCalls(
+      baseTools,
+      this.getUserAutoToolCalls(intent, userAssistantDto),
+    );
+
     return this.replyWithTools({
       message: userAssistantDto.message,
       summary: userAssistantDto.summary,
       history: this.getTrimmedHistory(userAssistantDto.history),
-      tools: this.getUserTools(),
+      tools,
+      verifiedToolResults,
       systemInstruction: this.buildUserSystemInstruction(userAssistantDto),
       userContext: this.buildUserContext(userAssistantDto),
       fallbackMessage: this.getFallbackMessage(userAssistantDto.locale, 'user'),
@@ -71,11 +92,23 @@ export class AiService {
   }
 
   async replyToFleetAssistant(fleetAssistantDto: FleetAssistantDto) {
+    const baseTools = this.getFleetTools();
+    const intent = this.routeFleetIntent(fleetAssistantDto);
+    const tools = this.pickTools(
+      baseTools,
+      this.getFleetToolNamesForIntent(intent, fleetAssistantDto),
+    );
+    const verifiedToolResults = await this.runVerifiedToolCalls(
+      baseTools,
+      this.getFleetAutoToolCalls(intent, fleetAssistantDto),
+    );
+
     return this.replyWithTools({
       message: fleetAssistantDto.message,
       summary: fleetAssistantDto.summary,
       history: this.getTrimmedHistory(fleetAssistantDto.history),
-      tools: this.getFleetTools(),
+      tools,
+      verifiedToolResults,
       systemInstruction: this.buildFleetSystemInstruction(fleetAssistantDto),
       userContext: this.buildFleetContext(fleetAssistantDto),
       fallbackMessage: this.getFallbackMessage(fleetAssistantDto.locale, 'fleet'),
@@ -88,12 +121,20 @@ export class AiService {
     actorSessionVersion?: string | null,
   ) {
     const actor = await requireAdminActor(this.prisma, actorUserId, actorSessionVersion);
+    const baseTools = this.getAdminTools();
+    const intent = this.routeAdminIntent(adminAssistantDto);
+    const tools = this.pickTools(baseTools, this.getAdminToolNamesForIntent(intent));
+    const verifiedToolResults = await this.runVerifiedToolCalls(
+      baseTools,
+      this.getAdminAutoToolCalls(intent),
+    );
 
     return this.replyWithTools({
       message: adminAssistantDto.message,
       summary: adminAssistantDto.summary,
       history: this.getTrimmedHistory(adminAssistantDto.history),
-      tools: this.getAdminTools(),
+      tools,
+      verifiedToolResults,
       systemInstruction: this.buildAdminSystemInstruction(adminAssistantDto),
       userContext: this.buildAdminContext(adminAssistantDto, actor.email),
       fallbackMessage: this.getFallbackMessage(adminAssistantDto.locale, 'admin'),
@@ -105,6 +146,7 @@ export class AiService {
     summary?: string;
     history: AssistantChatMessage[];
     tools: AssistantToolSet;
+    verifiedToolResults?: AssistantVerifiedToolResult[];
     systemInstruction: string;
     userContext: string;
     fallbackMessage: string;
@@ -115,13 +157,14 @@ export class AiService {
       );
     }
 
+    const verifiedToolContext = this.buildVerifiedToolContext(input.verifiedToolResults);
     const contents = this.buildConversation(
       input.summary,
       input.history,
-      input.userContext,
+      [input.userContext, verifiedToolContext].filter(Boolean).join('\n\n'),
       input.message,
     );
-    const toolCallsUsed: string[] = [];
+    const toolCallsUsed: string[] = input.verifiedToolResults?.map((tool) => tool.name) ?? [];
 
     try {
       for (let loop = 0; loop < MAX_TOOL_LOOPS; loop += 1) {
@@ -293,13 +336,11 @@ export class AiService {
 
   private buildUserSystemInstruction(userAssistantDto: UserAssistantDto) {
     return [
-      'You are BusBuddy for Bangkok bus riders.',
+      'BusBuddy rider AI.',
       this.getLanguageInstruction(userAssistantDto.locale),
-      'Answer only from BusBuddy backend tool data.',
-      'Do not use outside knowledge or guess missing transit facts.',
-      'Use tools for any stop, route, live bus, or ETA question.',
-      'Keep answers short, practical, and rider-friendly.',
-      'Do not mention tool names in the final answer.',
+      'Use only verified BusBuddy backend data. If data is missing, say what is missing.',
+      'For transit facts, use the provided tool data or call one provided tool.',
+      'No outside knowledge. Do not mention tool names.',
       userAssistantDto.userLocation
         ? `Current location: ${userAssistantDto.userLocation.lat}, ${userAssistantDto.userLocation.lng}.`
         : 'Current location unavailable.',
@@ -308,14 +349,11 @@ export class AiService {
 
   private buildFleetSystemInstruction(fleetAssistantDto: FleetAssistantDto) {
     return [
-      'You are BusBuddy Fleet AI for Bangkok bus operations.',
+      'BusBuddy fleet AI.',
       this.getLanguageInstruction(fleetAssistantDto.locale),
-      'Answer only from BusBuddy fleet and transit backend tool data.',
-      'Do not use outside knowledge or guess missing operational facts.',
-      'Use tools for route health, buses, drivers, shifts, and fleet issues.',
-      'Keep answers concise, operational, and actionable.',
-      'Prioritize delay, traffic, occupancy, and active shift context when relevant.',
-      'Do not mention tool names in the final answer.',
+      'Use only verified fleet/backend data. If data is missing, say what is missing.',
+      'Prioritize delay, traffic, occupancy, buses, drivers, and shifts when present.',
+      'No outside knowledge. Do not mention tool names.',
       fleetAssistantDto.activeTab ? `Current fleet tab: ${fleetAssistantDto.activeTab}.` : '',
     ]
       .filter(Boolean)
@@ -324,13 +362,11 @@ export class AiService {
 
   private buildAdminSystemInstruction(adminAssistantDto: AdminAssistantDto) {
     return [
-      'You are BusBuddy Admin AI for system administrators.',
+      'BusBuddy admin AI.',
       this.getLanguageInstruction(adminAssistantDto.locale),
-      'Answer only from BusBuddy admin backend tool data.',
-      'Do not use outside knowledge or guess missing admin facts.',
-      'Use tools for user, system health, audit log, and account-management questions.',
-      'Keep answers concise, admin-focused, and action-oriented.',
-      'Do not mention tool names in the final answer.',
+      'Use only verified admin/backend data. If data is missing, say what is missing.',
+      'Focus on users, system health, audit logs, and safe admin actions.',
+      'No outside knowledge. Do not mention tool names.',
       adminAssistantDto.activeSection
         ? `Current admin section: ${adminAssistantDto.activeSection}.`
         : '',
@@ -341,8 +377,319 @@ export class AiService {
 
   private getLanguageInstruction(locale?: 'en' | 'th') {
     return locale === 'th'
-      ? 'ตอบเป็นภาษาไทยเท่านั้น ยกเว้นชื่อ endpoint, role, action, email หรือ code ที่ควรคงภาษาอังกฤษ.'
-      : 'Reply in English only unless the user explicitly asks for another language.';
+      ? 'ตอบไทยแบบกระชับ ไม่เกิน 3 bullet หรือ 4 ประโยค ใช้ข้อมูลจาก tools เท่านั้น.'
+      : 'Reply in concise English, max 3 bullets or 4 sentences, using tool data only.';
+  }
+
+  private pickTools(toolSet: AssistantToolSet, allowedNames: string[]): AssistantToolSet {
+    const allowed = new Set(allowedNames);
+
+    return {
+      declarations: toolSet.declarations.filter((declaration) =>
+        declaration.name ? allowed.has(declaration.name) : false,
+      ),
+      handlers: Object.fromEntries(
+        Object.entries(toolSet.handlers).filter(([name]) => allowed.has(name)),
+      ),
+    };
+  }
+
+  private async runVerifiedToolCalls(toolSet: AssistantToolSet, calls: AutoToolCall[]) {
+    const results: AssistantVerifiedToolResult[] = [];
+
+    for (const call of calls) {
+      const handler = toolSet.handlers[call.name];
+
+      if (!handler) {
+        continue;
+      }
+
+      try {
+        results.push({
+          name: call.name,
+          result: await handler(call.args),
+        });
+      } catch (error) {
+        results.push({
+          name: call.name,
+          result: {
+            error:
+              error instanceof Error ? error.message : 'Verified backend lookup failed.',
+          },
+        });
+      }
+    }
+
+    return results;
+  }
+
+  private buildVerifiedToolContext(results: AssistantVerifiedToolResult[] | undefined) {
+    if (!results?.length) {
+      return '';
+    }
+
+    return [
+      'Verified backend tool data. Answer from this data only unless you call another provided tool:',
+      ...results.map((result) => `${result.name}: ${this.stringifyCompact(result.result)}`),
+    ].join('\n');
+  }
+
+  private stringifyCompact(value: unknown) {
+    return JSON.stringify(value)?.slice(0, MAX_VERIFIED_TOOL_RESULT_CHARS) ?? '';
+  }
+
+  private intentText(...values: Array<string | undefined>) {
+    return values
+      .filter(Boolean)
+      .join(' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toLowerCase();
+  }
+
+  private routeUserIntent(userAssistantDto: UserAssistantDto): UserAssistantIntent {
+    const text = this.intentText(userAssistantDto.message, userAssistantDto.summary);
+
+    if (/(eta|arriv|arrival|กี่นาที|อีกกี่|ถึงเมื่อ|รถมา|รอรถ)/i.test(text)) {
+      return 'eta';
+    }
+
+    if (/(near|nearby|closest|around|ใกล้|ใกล้สุด|ป้ายใกล้|สถานีใกล้)/i.test(text)) {
+      return 'nearby';
+    }
+
+    if (/(route|line|สาย|เส้นทาง|ไปยัง|จาก|ปลายทาง|ต้นทาง)/i.test(text)) {
+      return 'route';
+    }
+
+    if (/(bus|vehicle|live|position|อยู่ไหน|ตำแหน่ง|รถสด|รถบัส)/i.test(text)) {
+      return 'live_buses';
+    }
+
+    if (userAssistantDto.selectedStopId) {
+      return 'stop';
+    }
+
+    if (userAssistantDto.userLocation) {
+      return 'nearby';
+    }
+
+    return 'general';
+  }
+
+  private getUserToolNamesForIntent(
+    intent: UserAssistantIntent,
+    userAssistantDto: UserAssistantDto,
+  ) {
+    const routeScopedTools = userAssistantDto.selectedRouteIds?.length
+      ? ['get_route_details', 'get_live_buses']
+      : ['search_routes'];
+
+    const toolsByIntent: Record<UserAssistantIntent, string[]> = {
+      nearby: ['get_nearby_stops'],
+      stop: ['get_stop_details', 'get_eta_for_stop'],
+      route: [...routeScopedTools, 'get_live_buses'],
+      live_buses: ['get_live_buses', 'get_route_details'],
+      eta: ['get_eta_for_stop', 'get_stop_details'],
+      general: userAssistantDto.userLocation
+        ? ['get_nearby_stops', 'search_routes']
+        : ['search_routes'],
+    };
+
+    return toolsByIntent[intent];
+  }
+
+  private getUserAutoToolCalls(
+    intent: UserAssistantIntent,
+    userAssistantDto: UserAssistantDto,
+  ): AutoToolCall[] {
+    const calls: AutoToolCall[] = [];
+    const selectedRouteId = userAssistantDto.selectedRouteIds?.[0];
+    const routeQuery = this.extractRouteQuery(userAssistantDto.message);
+
+    if (intent === 'nearby' && userAssistantDto.userLocation) {
+      calls.push({
+        name: 'get_nearby_stops',
+        args: { ...userAssistantDto.userLocation, radius: 1200 },
+      });
+    }
+
+    if ((intent === 'stop' || intent === 'eta') && userAssistantDto.selectedStopId) {
+      calls.push({
+        name: intent === 'eta' ? 'get_eta_for_stop' : 'get_stop_details',
+        args: { stopId: userAssistantDto.selectedStopId },
+      });
+    }
+
+    if (intent === 'route') {
+      if (selectedRouteId) {
+        calls.push({ name: 'get_route_details', args: { routeId: selectedRouteId } });
+      } else if (routeQuery) {
+        calls.push({ name: 'search_routes', args: { query: routeQuery } });
+      }
+    }
+
+    if (intent === 'live_buses') {
+      calls.push({
+        name: 'get_live_buses',
+        args: selectedRouteId ? { routeId: selectedRouteId } : {},
+      });
+    }
+
+    if (intent === 'general' && userAssistantDto.userLocation) {
+      calls.push({
+        name: 'get_nearby_stops',
+        args: { ...userAssistantDto.userLocation, radius: 800 },
+      });
+    }
+
+    return calls.slice(0, 2);
+  }
+
+  private routeFleetIntent(fleetAssistantDto: FleetAssistantDto): FleetAssistantIntent {
+    const text = this.intentText(fleetAssistantDto.message, fleetAssistantDto.summary);
+
+    if (
+      fleetAssistantDto.selectedBusId ||
+      /(assignment|driver|license|plate|คนขับ|ทะเบียน)/i.test(text)
+    ) {
+      return 'assignment';
+    }
+
+    if (
+      fleetAssistantDto.activeTab === 'shifts' ||
+      /(shift|schedule|เวร|กะ|ตาราง)/i.test(text)
+    ) {
+      return 'shifts';
+    }
+
+    if (
+      fleetAssistantDto.selectedRouteId ||
+      /(route|health|delay|traffic|สาย|ล่าช้า|รถติด)/i.test(text)
+    ) {
+      return 'route_health';
+    }
+
+    if (
+      fleetAssistantDto.activeTab === 'vehicles' ||
+      /(bus|vehicle|fleet|รถ|คัน)/i.test(text)
+    ) {
+      return 'buses';
+    }
+
+    if (fleetAssistantDto.activeTab === 'overview') {
+      return 'overview';
+    }
+
+    return 'general';
+  }
+
+  private getFleetToolNamesForIntent(
+    intent: FleetAssistantIntent,
+    fleetAssistantDto: FleetAssistantDto,
+  ) {
+    const toolsByIntent: Record<FleetAssistantIntent, string[]> = {
+      overview: ['get_fleet_overview'],
+      route_health: ['get_route_health', 'get_fleet_buses'],
+      buses: ['get_fleet_buses', 'get_bus_assignment'],
+      shifts: ['get_active_shifts'],
+      assignment: fleetAssistantDto.selectedBusId
+        ? ['get_bus_assignment']
+        : ['get_fleet_buses', 'get_active_shifts'],
+      general: ['get_fleet_overview'],
+    };
+
+    return toolsByIntent[intent];
+  }
+
+  private getFleetAutoToolCalls(
+    intent: FleetAssistantIntent,
+    fleetAssistantDto: FleetAssistantDto,
+  ): AutoToolCall[] {
+    const routeArgs = fleetAssistantDto.selectedRouteId
+      ? { routeId: fleetAssistantDto.selectedRouteId }
+      : {};
+
+    if (intent === 'assignment' && fleetAssistantDto.selectedBusId) {
+      return [
+        {
+          name: 'get_bus_assignment',
+          args: { busId: fleetAssistantDto.selectedBusId },
+        },
+      ];
+    }
+
+    if (intent === 'shifts') {
+      return [{ name: 'get_active_shifts', args: {} }];
+    }
+
+    if (intent === 'route_health') {
+      return [{ name: 'get_route_health', args: routeArgs }];
+    }
+
+    if (intent === 'buses') {
+      return [{ name: 'get_fleet_buses', args: routeArgs }];
+    }
+
+    return [{ name: 'get_fleet_overview', args: {} }];
+  }
+
+  private routeAdminIntent(adminAssistantDto: AdminAssistantDto): AdminAssistantIntent {
+    const text = this.intentText(
+      adminAssistantDto.message,
+      adminAssistantDto.summary,
+      adminAssistantDto.activeSection,
+    );
+
+    if (/(audit|log|history|role change|ใครแก้|ประวัติ|audit log)/i.test(text)) {
+      return 'audit';
+    }
+
+    if (/(health|backend|database|websocket|ai|sync|online|ระบบ|ฐานข้อมูล)/i.test(text)) {
+      return 'health';
+    }
+
+    if (
+      /(user|account|role|admin|fleet|disable|delete|password|ผู้ใช้|บัญชี|สิทธิ์)/i.test(text)
+    ) {
+      return 'users';
+    }
+
+    return 'general';
+  }
+
+  private getAdminToolNamesForIntent(intent: AdminAssistantIntent) {
+    const toolsByIntent: Record<AdminAssistantIntent, string[]> = {
+      users: ['get_admin_user_summary'],
+      health: ['get_admin_system_health'],
+      audit: ['get_admin_audit_logs'],
+      general: ['get_admin_system_health'],
+    };
+
+    return toolsByIntent[intent];
+  }
+
+  private getAdminAutoToolCalls(intent: AdminAssistantIntent): AutoToolCall[] {
+    const toolsByIntent: Record<AdminAssistantIntent, AutoToolCall[]> = {
+      users: [{ name: 'get_admin_user_summary', args: {} }],
+      health: [{ name: 'get_admin_system_health', args: {} }],
+      audit: [{ name: 'get_admin_audit_logs', args: {} }],
+      general: [{ name: 'get_admin_system_health', args: {} }],
+    };
+
+    return toolsByIntent[intent];
+  }
+
+  private extractRouteQuery(message: string) {
+    const routeNumberMatch = message.match(/(?:route|line|สาย)\s*([0-9]{1,3})/i);
+
+    if (routeNumberMatch?.[1]) {
+      return routeNumberMatch[1];
+    }
+
+    const plainNumberMatch = message.match(/\b([0-9]{1,3})\b/);
+
+    return plainNumberMatch?.[1] ?? message.trim().slice(0, 40);
   }
 
   private getFallbackMessage(locale: 'en' | 'th' | undefined, mode: 'user' | 'fleet' | 'admin') {
