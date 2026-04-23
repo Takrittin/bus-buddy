@@ -2,23 +2,22 @@
 
 import React, { useMemo, useState } from "react";
 import { Bot, MessageCircle, SendHorizonal, Sparkles, X } from "lucide-react";
-import { askUserAssistant } from "@/services/ai";
+import { askFleetAssistant } from "@/services/ai";
 import { Button } from "@/components/ui/Button";
-import { Location, Stop } from "@/types/bus";
 import { UserAssistantMessage } from "@/types/ai";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 
 const MAX_CLIENT_HISTORY_MESSAGES = 4;
 const MAX_CLIENT_HISTORY_CHARS = 220;
 
-export function UserAssistantPanel({
-  userLocation,
-  selectedStop,
-  selectedRouteIds,
+export function FleetAssistantPanel({
+  selectedRouteId,
+  selectedBusId,
+  activeTab,
 }: {
-  userLocation: Location | null;
-  selectedStop: Stop | null;
-  selectedRouteIds: string[];
+  selectedRouteId?: string | null;
+  selectedBusId?: string | null;
+  activeTab: "overview" | "alerts" | "vehicles" | "shifts";
 }) {
   const { t } = useLanguage();
   const [isOpen, setIsOpen] = useState(false);
@@ -29,13 +28,14 @@ export function UserAssistantPanel({
   const [messages, setMessages] = useState<UserAssistantMessage[]>([
     {
       role: "assistant",
-      content: t("ai.intro"),
+      content: t("ai.fleetIntro"),
     },
   ]);
+
   const suggestions = [
-    t("ai.suggestions.nearestStop"),
-    t("ai.suggestions.fastestRoute"),
-    t("ai.suggestions.bangKapi"),
+    t("ai.suggestions.fleetRoute"),
+    t("ai.suggestions.fleetShifts"),
+    t("ai.suggestions.fleetTraffic"),
   ];
 
   const conversationHistory = useMemo(() => {
@@ -66,13 +66,14 @@ export function UserAssistantPanel({
     setIsLoading(true);
 
     try {
-      const response = await askUserAssistant({
+      const response = await askFleetAssistant({
         message: trimmedMessage,
         summary: conversationSummary ?? undefined,
         history: conversationHistory,
-        userLocation: userLocation ?? undefined,
-        selectedStopId: selectedStop?.id,
-        selectedRouteIds: selectedRouteIds.length > 0 ? selectedRouteIds : undefined,
+        selectedRouteId:
+          selectedRouteId && selectedRouteId !== "all" ? selectedRouteId : undefined,
+        selectedBusId: selectedBusId ?? undefined,
+        activeTab,
       });
 
       setConversationSummary(response.summary ?? null);
@@ -88,7 +89,7 @@ export function UserAssistantPanel({
       setError(
         requestError instanceof Error
           ? requestError.message
-          : "Unable to reach the BusBuddy assistant right now.",
+          : "Unable to reach the BusBuddy fleet assistant right now.",
       );
     } finally {
       setIsLoading(false);
@@ -97,19 +98,19 @@ export function UserAssistantPanel({
 
   return (
     <>
-      <div className="fixed bottom-24 right-4 z-[55] md:bottom-8 md:left-[104px] md:right-auto">
+      <div className="fixed bottom-24 right-4 z-[55] md:bottom-8 md:right-8">
         <Button
           variant="primary"
           onClick={() => setIsOpen((currentValue) => !currentValue)}
           className="rounded-full px-4 py-3 shadow-xl shadow-brand/20 md:px-5"
         >
           <MessageCircle className="mr-2 h-4 w-4" />
-          {t("ai.open")}
+          {t("ai.fleetOpen")}
         </Button>
       </div>
 
       {isOpen ? (
-        <div className="fixed inset-x-4 bottom-[88px] z-[60] flex max-h-[calc(100vh-160px)] flex-col overflow-hidden rounded-3xl border border-orange-100 bg-white shadow-2xl md:inset-x-auto md:bottom-24 md:left-[104px] md:w-[380px] md:max-h-[min(720px,calc(100vh-128px))]">
+        <div className="fixed inset-x-4 bottom-[88px] z-[60] flex max-h-[calc(100vh-160px)] flex-col overflow-hidden rounded-3xl border border-orange-100 bg-white shadow-2xl md:inset-x-auto md:bottom-24 md:right-8 md:w-[400px] md:max-h-[min(720px,calc(100vh-128px))]">
           <div className="flex items-start justify-between gap-3 border-b border-gray-100 bg-gradient-to-r from-orange-50 to-white px-5 py-4">
             <div className="flex items-start gap-3">
               <div className="rounded-2xl bg-brand p-2 text-white">
@@ -117,11 +118,9 @@ export function UserAssistantPanel({
               </div>
               <div>
                 <p className="text-sm font-semibold uppercase tracking-[0.14em] text-brand">
-                  {t("ai.title")}
+                  {t("ai.fleetTitle")}
                 </p>
-                <p className="mt-1 text-sm text-gray-600">
-                  {t("ai.subtitle")}
-                </p>
+                <p className="mt-1 text-sm text-gray-600">{t("ai.fleetSubtitle")}</p>
               </div>
             </div>
 
@@ -129,16 +128,26 @@ export function UserAssistantPanel({
               type="button"
               onClick={() => setIsOpen(false)}
               className="rounded-full bg-gray-100 p-2 text-gray-500 transition-colors hover:bg-gray-200"
-              aria-label="Close AI assistant"
+              aria-label="Close fleet AI assistant"
             >
               <X className="h-4 w-4" />
             </button>
           </div>
 
           <div className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
-            {selectedStop ? (
+            {selectedRouteId && selectedRouteId !== "all" ? (
               <div className="rounded-2xl border border-orange-100 bg-orange-50 px-4 py-3 text-xs text-orange-900">
-                <span className="font-semibold">{t("ai.focusStop", { name: selectedStop.name })}</span>
+                <span className="font-semibold">
+                  {t("ai.fleetContextRoute", { value: selectedRouteId })}
+                </span>
+              </div>
+            ) : null}
+
+            {selectedBusId ? (
+              <div className="rounded-2xl border border-orange-100 bg-orange-50 px-4 py-3 text-xs text-orange-900">
+                <span className="font-semibold">
+                  {t("ai.fleetContextBus", { value: selectedBusId })}
+                </span>
               </div>
             ) : null}
 
@@ -157,7 +166,7 @@ export function UserAssistantPanel({
 
             {isLoading ? (
               <div className="max-w-[88%] rounded-2xl bg-gray-100 px-4 py-3 text-sm text-gray-600">
-                {t("ai.thinking")}
+                {t("ai.fleetThinking")}
               </div>
             ) : null}
 
@@ -193,7 +202,7 @@ export function UserAssistantPanel({
               <textarea
                 value={inputValue}
                 onChange={(event) => setInputValue(event.target.value)}
-                placeholder={t("ai.placeholder")}
+                placeholder={t("ai.fleetPlaceholder")}
                 rows={2}
                 className="min-h-[52px] flex-1 resize-none rounded-2xl border border-gray-200 px-4 py-3 text-sm text-gray-900 outline-none transition-colors focus:border-brand"
               />

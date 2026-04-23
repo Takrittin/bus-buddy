@@ -7,5 +7,6 @@ import { FleetService } from './fleet.service';
   imports: [PrismaModule],
   controllers: [FleetController],
   providers: [FleetService],
+  exports: [FleetService],
 })
 export class FleetModule {}

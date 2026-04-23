@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useDeferredValue, useMemo, useState } from "react";
+import React, { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Activity,
@@ -21,6 +21,7 @@ import {
 import { AppHeader } from "@/components/navigation/AppHeader";
 import { BottomNav } from "@/components/navigation/BottomNav";
 import { BusDetailSheet } from "@/components/buses/BusDetailSheet";
+import { FleetAssistantPanel } from "@/components/ai/FleetAssistantPanel";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { useAuth } from "@/hooks/auth/useAuth";
@@ -35,6 +36,15 @@ import { DriverShift, ShiftStatus } from "@/types/fleet";
 type AlertTone = "red" | "orange" | "blue";
 type AlertSeverity = 1 | 2 | 3 | 4;
 type FleetTab = "overview" | "alerts" | "vehicles" | "shifts";
+type ShiftSortOption =
+  | "start_desc"
+  | "start_asc"
+  | "driver_asc"
+  | "plate_asc"
+  | "route_asc"
+  | "status";
+
+const SHIFT_PAGE_SIZE = 50;
 
 interface ShiftFormState {
   driverId: string;
@@ -497,9 +507,12 @@ export default function FleetPage() {
   const [activeTab, setActiveTab] = useState<FleetTab>("overview");
   const [shiftForm, setShiftForm] = useState<ShiftFormState>(createDefaultShiftFormState);
   const [editingShiftId, setEditingShiftId] = useState<string | null>(null);
+  const [isShiftFormOpen, setIsShiftFormOpen] = useState(false);
   const [isSubmittingShift, setIsSubmittingShift] = useState(false);
   const [shiftActionError, setShiftActionError] = useState<string | null>(null);
   const [shiftActionSuccess, setShiftActionSuccess] = useState<string | null>(null);
+  const [shiftSort, setShiftSort] = useState<ShiftSortOption>("start_desc");
+  const [shiftPage, setShiftPage] = useState(1);
   const deferredSearchQuery = useDeferredValue(searchQuery.trim().toLowerCase());
   const STATUS_OPTIONS: Array<{ value: "all" | BusStatus; label: string }> = [
     { value: "all", label: t("fleet.allStatuses") },
@@ -534,17 +547,85 @@ export default function FleetPage() {
     [routes],
   );
 
+  const driverNameCounts = useMemo(() => {
+    return drivers.reduce<Record<string, number>>((counts, driver) => {
+      counts[driver.fullName] = (counts[driver.fullName] ?? 0) + 1;
+      return counts;
+    }, {});
+  }, [drivers]);
+
+  const driverShiftOptions = useMemo(
+    () =>
+      drivers.map((driver) => {
+        const isDuplicateName = (driverNameCounts[driver.fullName] ?? 0) > 1;
+        const disambiguator = driver.depotName ?? driver.employeeCode;
+
+        return {
+          id: driver.id,
+          label:
+            isDuplicateName && disambiguator
+              ? `${driver.fullName} • ${disambiguator}`
+              : driver.fullName,
+        };
+      }),
+    [driverNameCounts, drivers],
+  );
+
+  const selectedDriverForShift = useMemo(
+    () => drivers.find((driver) => driver.id === shiftForm.driverId) ?? null,
+    [drivers, shiftForm.driverId],
+  );
+
+  const selectedFleetBusForShift = useMemo(
+    () => fleetBuses.find((bus) => bus.id === shiftForm.busId) ?? null,
+    [fleetBuses, shiftForm.busId],
+  );
+
+  const selectedRouteForShift = useMemo(
+    () => routeOptions.find((route) => route.id === shiftForm.routeId) ?? null,
+    [routeOptions, shiftForm.routeId],
+  );
+
   const alerts = useMemo(() => buildFleetAlerts(buses, t), [buses, t]);
   const routeHealth = useMemo(() => buildRouteHealth(routes, buses), [routes, buses]);
-  const sortedShifts = useMemo(
+  const sortedShifts = useMemo(() => {
+    const nextShifts = shifts.slice();
+
+    nextShifts.sort((left, right) => {
+      switch (shiftSort) {
+        case "start_asc":
+          return new Date(left.shiftStartAt).getTime() - new Date(right.shiftStartAt).getTime();
+        case "driver_asc":
+          return (left.driverName ?? left.driverId).localeCompare(right.driverName ?? right.driverId);
+        case "plate_asc":
+          return (left.busLicensePlate ?? left.busVehicleNumber ?? left.busId).localeCompare(
+            right.busLicensePlate ?? right.busVehicleNumber ?? right.busId,
+          );
+        case "route_asc":
+          return (left.routeNumber ?? left.routeId).localeCompare(right.routeNumber ?? right.routeId);
+        case "status":
+          if (left.status === right.status) {
+            return new Date(right.shiftStartAt).getTime() - new Date(left.shiftStartAt).getTime();
+          }
+          return left.status.localeCompare(right.status);
+        case "start_desc":
+        default:
+          return new Date(right.shiftStartAt).getTime() - new Date(left.shiftStartAt).getTime();
+      }
+    });
+
+    return nextShifts;
+  }, [shiftSort, shifts]);
+
+  const totalShiftPages = Math.max(1, Math.ceil(sortedShifts.length / SHIFT_PAGE_SIZE));
+  const currentShiftPage = Math.min(shiftPage, totalShiftPages);
+  const paginatedShifts = useMemo(
     () =>
-      shifts
-        .slice()
-        .sort(
-          (left, right) =>
-            new Date(right.shiftStartAt).getTime() - new Date(left.shiftStartAt).getTime(),
-        ),
-    [shifts],
+      sortedShifts.slice(
+        (currentShiftPage - 1) * SHIFT_PAGE_SIZE,
+        currentShiftPage * SHIFT_PAGE_SIZE,
+      ),
+    [currentShiftPage, sortedShifts],
   );
 
   const filteredBuses = useMemo(() => {
@@ -653,8 +734,15 @@ export default function FleetPage() {
     setEditingShiftId(null);
   };
 
+  useEffect(() => {
+    if (shiftPage > totalShiftPages) {
+      setShiftPage(totalShiftPages);
+    }
+  }, [shiftPage, totalShiftPages]);
+
   const startEditingShift = (shift: DriverShift) => {
     setActiveTab("shifts");
+    setIsShiftFormOpen(true);
     setEditingShiftId(shift.id);
     setShiftActionError(null);
     setShiftActionSuccess(null);
@@ -707,6 +795,7 @@ export default function FleetPage() {
         await createShift(payload);
         resetShiftForm();
         setShiftActionSuccess("Shift assigned.");
+        setIsShiftFormOpen(false);
       }
     } catch (error) {
       setShiftActionError(
@@ -1240,7 +1329,7 @@ export default function FleetPage() {
                 ) : null}
 
                 {activeTab === "shifts" ? (
-                  <section className="grid grid-cols-1 gap-6 xl:grid-cols-[0.95fr_1.05fr]">
+                  <section className="grid grid-cols-1 gap-6 2xl:grid-cols-[0.95fr_1.05fr]">
                     <div className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
                       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                         <div>
@@ -1251,14 +1340,22 @@ export default function FleetPage() {
                             {t("fleet.shiftSubtitle")}
                           </p>
                         </div>
-                        {editingShiftId ? (
-                          <Button variant="outline" onClick={resetShiftForm}>
-                            {t("common.cancelEdit")}
+                        <div className="flex flex-wrap gap-3">
+                          <Button
+                            variant="outline"
+                            onClick={() => setIsShiftFormOpen((currentValue) => !currentValue)}
+                          >
+                            {isShiftFormOpen ? t("fleet.hideShiftForm") : t("fleet.openShiftForm")}
                           </Button>
-                        ) : null}
+                          {editingShiftId ? (
+                            <Button variant="outline" onClick={resetShiftForm}>
+                              {t("common.cancelEdit")}
+                            </Button>
+                          ) : null}
+                        </div>
                       </div>
 
-                      <div className="mt-5 grid grid-cols-2 gap-3">
+                      <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
                         <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4">
                           <p className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">
                             {t("common.active")}
@@ -1289,6 +1386,7 @@ export default function FleetPage() {
                         </div>
                       ) : null}
 
+                      {isShiftFormOpen ? (
                       <form onSubmit={handleShiftSubmit} className="mt-5 space-y-4">
                         <FilterSelect
                           label={t("fleet.driver")}
@@ -1296,12 +1394,20 @@ export default function FleetPage() {
                           onChange={(value) => handleShiftFormChange("driverId", value)}
                         >
                           <option value="">{t("fleet.selectDriver")}</option>
-                          {drivers.map((driver) => (
+                          {driverShiftOptions.map((driver) => (
                             <option key={driver.id} value={driver.id}>
-                              {driver.fullName} • {driver.employeeCode}
+                              {driver.label}
                             </option>
                           ))}
                         </FilterSelect>
+                        {selectedDriverForShift ? (
+                          <p className="-mt-2 text-xs text-gray-500">
+                            {selectedDriverForShift.employeeCode}
+                            {selectedDriverForShift.depotName
+                              ? ` • ${selectedDriverForShift.depotName}`
+                              : ""}
+                          </p>
+                        ) : null}
 
                         <FilterSelect
                           label={t("fleet.bus")}
@@ -1311,10 +1417,18 @@ export default function FleetPage() {
                           <option value="">{t("fleet.selectBus")}</option>
                           {fleetBuses.map((bus) => (
                             <option key={bus.id} value={bus.id}>
-                              {bus.vehicleNumber} • {bus.licensePlate}
+                              {bus.vehicleNumber}
                             </option>
                           ))}
                         </FilterSelect>
+                        {selectedFleetBusForShift ? (
+                          <p className="-mt-2 text-xs text-gray-500">
+                            {selectedFleetBusForShift.licensePlate}
+                            {selectedFleetBusForShift.routeNumber
+                              ? ` • ${t("common.route")} ${selectedFleetBusForShift.routeNumber}`
+                              : ""}
+                          </p>
+                        ) : null}
 
                         <FilterSelect
                           label={t("common.route")}
@@ -1324,12 +1438,17 @@ export default function FleetPage() {
                           <option value="">{t("fleet.selectRoute")}</option>
                           {routeOptions.map((route) => (
                             <option key={route.id} value={route.id}>
-                              {t("common.route")} {route.routeNumber} • {route.routeName}
+                              {t("common.route")} {route.routeNumber}
                             </option>
                           ))}
                         </FilterSelect>
+                        {selectedRouteForShift ? (
+                          <p className="-mt-2 text-xs text-gray-500">
+                            {selectedRouteForShift.routeName}
+                          </p>
+                        ) : null}
 
-                        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                        <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
                           <FilterSelect
                             label={t("common.direction")}
                             value={shiftForm.direction}
@@ -1361,7 +1480,7 @@ export default function FleetPage() {
                           </FilterSelect>
                         </div>
 
-                        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                        <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
                           <label className="block">
                             <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
                               {t("fleet.shiftStart")}
@@ -1427,6 +1546,11 @@ export default function FleetPage() {
                           </Button>
                         </div>
                       </form>
+                      ) : (
+                        <div className="mt-5 rounded-2xl border border-gray-100 bg-gray-50 px-4 py-4 text-sm text-gray-600">
+                          {t("fleet.shiftFormCollapsed")}
+                        </div>
+                      )}
                     </div>
 
                     <div className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
@@ -1456,7 +1580,67 @@ export default function FleetPage() {
                           />
                         </div>
                       ) : (
-                        <div className="mt-5 overflow-x-auto">
+                        <div className="mt-5">
+                          <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                            <div className="text-sm text-gray-500">
+                              {t("fleet.shiftPageSummary", {
+                                from: (currentShiftPage - 1) * SHIFT_PAGE_SIZE + 1,
+                                to: Math.min(currentShiftPage * SHIFT_PAGE_SIZE, sortedShifts.length),
+                                total: sortedShifts.length,
+                              })}
+                            </div>
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                              <div className="min-w-[220px]">
+                                <FilterSelect
+                                  label={t("fleet.sortShifts")}
+                                  value={shiftSort}
+                                  onChange={(value) => {
+                                    setShiftSort(value as ShiftSortOption);
+                                    setShiftPage(1);
+                                  }}
+                                >
+                                  <option value="start_desc">{t("fleet.sortNewestFirst")}</option>
+                                  <option value="start_asc">{t("fleet.sortOldestFirst")}</option>
+                                  <option value="plate_asc">{t("fleet.sortLicensePlate")}</option>
+                                  <option value="driver_asc">{t("fleet.sortDriverName")}</option>
+                                  <option value="route_asc">{t("fleet.sortRouteNumber")}</option>
+                                  <option value="status">{t("fleet.sortShiftStatus")}</option>
+                                </FilterSelect>
+                              </div>
+                              <div className="flex items-center gap-2 self-end">
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => setShiftPage((currentValue) => Math.max(1, currentValue - 1))}
+                                  disabled={shiftPage <= 1}
+                                >
+                                  {t("fleet.previousPage")}
+                                </Button>
+                                <div className="rounded-2xl border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700">
+                                  {t("fleet.shiftPageIndicator", {
+                                    current: currentShiftPage,
+                                    total: totalShiftPages,
+                                  })}
+                                </div>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() =>
+                                    setShiftPage((currentValue) =>
+                                      Math.min(totalShiftPages, currentValue + 1),
+                                    )
+                                  }
+                                  disabled={currentShiftPage >= totalShiftPages}
+                                >
+                                  {t("fleet.nextPage")}
+                                </Button>
+                              </div>
+                            </div>
+                          </div>
+
+                        <div className="overflow-x-auto">
                           <table className="min-w-full divide-y divide-gray-100 text-sm">
                             <thead>
                               <tr className="text-left text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
@@ -1470,7 +1654,7 @@ export default function FleetPage() {
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100">
-                              {sortedShifts.map((shift) => (
+                              {paginatedShifts.map((shift) => (
                                 <tr key={shift.id} className="align-top">
                                   <td className="px-4 py-4">
                                     <p className="font-semibold text-gray-900">
@@ -1482,7 +1666,9 @@ export default function FleetPage() {
                                     <p className="font-semibold text-gray-900">
                                       {shift.busVehicleNumber ?? shift.busId}
                                     </p>
-                                    <p className="mt-1 text-xs text-gray-500">{shift.busId}</p>
+                                    <p className="mt-1 text-xs text-gray-500">
+                                      {shift.busLicensePlate ?? shift.busId}
+                                    </p>
                                   </td>
                                   <td className="px-4 py-4">
                                     <p className="font-semibold text-gray-900">
@@ -1557,6 +1743,7 @@ export default function FleetPage() {
                             </tbody>
                           </table>
                         </div>
+                        </div>
                       )}
                     </div>
                   </section>
@@ -1569,6 +1756,14 @@ export default function FleetPage() {
 
       {selectedBus ? (
         <BusDetailSheet bus={selectedBus} onClose={() => setSelectedBusId(null)} />
+      ) : null}
+
+      {isAuthenticated && canAccessFleet ? (
+        <FleetAssistantPanel
+          selectedRouteId={selectedRouteId}
+          selectedBusId={selectedBusId}
+          activeTab={activeTab}
+        />
       ) : null}
     </div>
   );

@@ -122,6 +122,7 @@ export class FleetService {
       shifts: driver.shifts.map((shift) =>
         this.toShiftResponse(shift, {
           bus_vehicle_number: shift.bus.vehicleNumber,
+          bus_license_plate: shift.bus.licensePlate,
           route_number: shift.route.shortName,
         }),
       ),
@@ -142,6 +143,7 @@ export class FleetService {
       this.toShiftResponse(shift, {
         driver_name: shift.driver.fullName,
         bus_vehicle_number: shift.bus.vehicleNumber,
+        bus_license_plate: shift.bus.licensePlate,
         route_number: shift.route.shortName,
       }),
     );
@@ -162,6 +164,7 @@ export class FleetService {
       this.toShiftResponse(shift, {
         driver_name: shift.driver.fullName,
         bus_vehicle_number: shift.bus.vehicleNumber,
+        bus_license_plate: shift.bus.licensePlate,
         route_number: shift.route.shortName,
       }),
     );
@@ -502,6 +505,7 @@ export class FleetService {
     return this.toShiftResponse(shift, {
       driver_name: shift.driver.fullName,
       bus_vehicle_number: shift.bus.vehicleNumber,
+      bus_license_plate: shift.bus.licensePlate,
       route_number: shift.route.shortName,
     });
   }

@@ -1722,8 +1722,13 @@ export class TransitStateService {
 
   private buildDriverName(busId: string) {
     const hash = this.hashBusSeed(busId);
-    const firstName = DRIVER_FIRST_NAMES[hash % DRIVER_FIRST_NAMES.length];
-    const lastName = DRIVER_LAST_NAMES[(hash * 3) % DRIVER_LAST_NAMES.length];
+    const combinationCount = DRIVER_FIRST_NAMES.length * DRIVER_LAST_NAMES.length;
+    const combinationIndex = hash % combinationCount;
+    const firstName = DRIVER_FIRST_NAMES[combinationIndex % DRIVER_FIRST_NAMES.length];
+    const lastName =
+      DRIVER_LAST_NAMES[
+        Math.floor(combinationIndex / DRIVER_FIRST_NAMES.length) % DRIVER_LAST_NAMES.length
+      ];
     return `${firstName} ${lastName}`;
   }
 
@@ -1749,8 +1754,8 @@ export class TransitStateService {
   ) {
     const hash = this.hashBusSeed(busId);
     const normalizedBusId = busId.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
-    const employeeCode = `EMP-${normalizedBusId}`;
-    const licenseNumber = `DRV-${normalizedBusId}`;
+    const employeeCode = `EMP-${String(hash).padStart(6, '0').slice(-6)}-${normalizedBusId.slice(-4)}`;
+    const licenseNumber = `DRV-${String(hash * 7).padStart(6, '0').slice(-6)}-${normalizedBusId.slice(-4)}`;
     const phoneSuffix = String(1000 + (hash % 9000)).padStart(4, '0');
     const emergencySuffix = String(1000 + ((hash * 7) % 9000)).padStart(4, '0');
     const expiryYear = 2027 + (hash % 4);

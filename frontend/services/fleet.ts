@@ -37,6 +37,7 @@ interface ApiFleetShiftResponse {
   notes?: string | null;
   driver_name?: string | null;
   bus_vehicle_number?: string | null;
+  bus_license_plate?: string | null;
   route_number?: string | null;
 }
 
@@ -95,6 +96,7 @@ function mapFleetShiftResponse(shift: ApiFleetShiftResponse): DriverShift {
     notes: shift.notes,
     driverName: shift.driver_name,
     busVehicleNumber: shift.bus_vehicle_number,
+    busLicensePlate: shift.bus_license_plate,
     routeNumber: shift.route_number,
   };
 }

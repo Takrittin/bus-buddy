@@ -31,6 +31,7 @@ export interface DriverShift {
   notes?: string | null;
   driverName?: string | null;
   busVehicleNumber?: string | null;
+  busLicensePlate?: string | null;
   routeNumber?: string | null;
 }
 
