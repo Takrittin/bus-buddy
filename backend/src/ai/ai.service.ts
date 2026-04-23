@@ -490,7 +490,9 @@ export class AiService {
       stop: ['get_stop_details', 'get_eta_for_stop'],
       route: [...routeScopedTools, 'get_live_buses'],
       live_buses: ['get_live_buses', 'get_route_details'],
-      eta: ['get_eta_for_stop', 'get_stop_details'],
+      eta: userAssistantDto.selectedStopId
+        ? ['get_eta_for_stop', 'get_stop_details']
+        : ['get_eta_for_nearest_stop', 'get_nearby_stops'],
       general: userAssistantDto.userLocation
         ? ['get_nearby_stops', 'search_routes']
         : ['search_routes'],
@@ -518,6 +520,13 @@ export class AiService {
       calls.push({
         name: intent === 'eta' ? 'get_eta_for_stop' : 'get_stop_details',
         args: { stopId: userAssistantDto.selectedStopId },
+      });
+    }
+
+    if (intent === 'eta' && !userAssistantDto.selectedStopId && userAssistantDto.userLocation) {
+      calls.push({
+        name: 'get_eta_for_nearest_stop',
+        args: { ...userAssistantDto.userLocation, radius: 2500 },
       });
     }
 
@@ -915,6 +924,23 @@ export class AiService {
           required: ['stopId'],
         },
       },
+      {
+        name: 'get_eta_for_nearest_stop',
+        description:
+          'Find the nearest stop to a rider location and return ETA predictions for that stop.',
+        parametersJsonSchema: {
+          type: 'object',
+          properties: {
+            lat: { type: 'number', description: 'Latitude of the rider location.' },
+            lng: { type: 'number', description: 'Longitude of the rider location.' },
+            radius: {
+              type: 'number',
+              description: 'Optional search radius in meters. Default 2500.',
+            },
+          },
+          required: ['lat', 'lng'],
+        },
+      },
     ];
 
     const handlers: Record<string, ToolCallHandler> = {
@@ -1012,6 +1038,36 @@ export class AiService {
           .map((prediction) =>
             this.toCompactEtaPrediction(prediction as Record<string, unknown>),
           );
+      },
+      get_eta_for_nearest_stop: async (args) => {
+        const lat = Number(args.lat);
+        const lng = Number(args.lng);
+        const radius = args.radius ? Number(args.radius) : 2500;
+        const nearestStop = this.transitState.getNearbyStops(lat, lng, radius)[0];
+
+        if (!nearestStop) {
+          return {
+            nearest_stop: null,
+            eta_predictions: [],
+            message: 'No nearby stop found inside the search radius.',
+          };
+        }
+
+        return {
+          nearest_stop: {
+            stop_id: nearestStop.stop_id,
+            stop_name: nearestStop.stop_name,
+            distance_meters: nearestStop.distance_meters,
+            route_ids: nearestStop.route_ids?.slice(0, 6),
+            landmark: nearestStop.landmark,
+          },
+          eta_predictions: this.transitState
+            .getEtaPredictions(nearestStop.stop_id)
+            .slice(0, 5)
+            .map((prediction) =>
+              this.toCompactEtaPrediction(prediction as Record<string, unknown>),
+            ),
+        };
       },
     };
 

@@ -33,6 +33,8 @@ type EditableUser = Record<
   }
 >;
 
+const AUDIT_LOGS_PER_PAGE = 20;
+
 export default function AdminPage() {
   const router = useRouter();
   const { locale, t } = useLanguage();
@@ -50,6 +52,7 @@ export default function AdminPage() {
   const [auditActorQuery, setAuditActorQuery] = useState("");
   const [auditDateFrom, setAuditDateFrom] = useState("");
   const [auditDateTo, setAuditDateTo] = useState("");
+  const [auditPage, setAuditPage] = useState(1);
   const [fleetForm, setFleetForm] = useState({
     name: "",
     email: "",
@@ -159,6 +162,20 @@ export default function AdminPage() {
       return matchesAction && matchesActor && matchesFrom && matchesTo;
     });
   }, [auditActionFilter, auditActorQuery, auditDateFrom, auditDateTo, auditLogs]);
+
+  useEffect(() => {
+    setAuditPage(1);
+  }, [auditActionFilter, auditActorQuery, auditDateFrom, auditDateTo]);
+
+  const auditPageCount = Math.max(1, Math.ceil(filteredAuditLogs.length / AUDIT_LOGS_PER_PAGE));
+  const safeAuditPage = Math.min(auditPage, auditPageCount);
+  const auditPageStartIndex = (safeAuditPage - 1) * AUDIT_LOGS_PER_PAGE;
+  const paginatedAuditLogs = filteredAuditLogs.slice(
+    auditPageStartIndex,
+    auditPageStartIndex + AUDIT_LOGS_PER_PAGE,
+  );
+  const auditPageFrom = filteredAuditLogs.length === 0 ? 0 : auditPageStartIndex + 1;
+  const auditPageTo = Math.min(auditPageStartIndex + AUDIT_LOGS_PER_PAGE, filteredAuditLogs.length);
 
   const getReason = (message: string) => {
     const reason = window.prompt(message);
@@ -390,7 +407,7 @@ export default function AdminPage() {
               />
             </section>
 
-            <section className="grid gap-6 xl:grid-cols-[1.45fr_0.95fr]">
+            <section className="grid gap-6">
               <div className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
                 <div className="flex items-center gap-3">
                   <div className="rounded-2xl bg-orange-100 p-3 text-brand">
@@ -437,9 +454,9 @@ export default function AdminPage() {
                   </select>
                 </div>
 
-                <div className="mt-6 overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-100 text-left text-sm">
-                    <thead>
+                <div className="mt-6 max-h-[640px] overflow-auto rounded-2xl border border-gray-100">
+                  <table className="min-w-[1100px] divide-y divide-gray-100 text-left text-sm xl:min-w-full">
+                    <thead className="sticky top-0 z-10 bg-white shadow-[0_1px_0_rgba(229,231,235,1)]">
                       <tr className="text-xs uppercase tracking-[0.14em] text-gray-500">
                         <th className="px-3 py-3">{t("admin.user")}</th>
                         <th className="px-3 py-3">{t("admin.role")}</th>
@@ -576,7 +593,7 @@ export default function AdminPage() {
                 </div>
               </div>
 
-              <div className="space-y-6">
+              <div className="grid gap-6 xl:grid-cols-2">
                 <section className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
                   <h2 className="text-2xl font-bold text-gray-900">
                     {t("admin.createFleetManager")}
@@ -717,9 +734,9 @@ export default function AdminPage() {
                 />
               </div>
 
-              <div className="mt-6 overflow-x-auto">
+              <div className="mt-6 overflow-x-auto rounded-2xl border border-gray-100">
                 <table className="min-w-full divide-y divide-gray-100 text-left text-sm">
-                  <thead>
+                  <thead className="bg-white">
                     <tr className="text-xs uppercase tracking-[0.14em] text-gray-500">
                       <th className="px-3 py-3">{t("admin.when")}</th>
                       <th className="px-3 py-3">{t("admin.actor")}</th>
@@ -728,7 +745,7 @@ export default function AdminPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
-                    {filteredAuditLogs.map((log) => (
+                    {paginatedAuditLogs.map((log) => (
                       <tr key={log.id}>
                         <td className="px-3 py-3 text-gray-500">
                           {formatDateTime(log.createdAt)}
@@ -753,6 +770,38 @@ export default function AdminPage() {
                     ))}
                   </tbody>
                 </table>
+              </div>
+
+              <div className="mt-4 flex flex-col gap-3 text-sm text-gray-500 sm:flex-row sm:items-center sm:justify-between">
+                <p>
+                  {t("admin.auditPageSummary", {
+                    from: auditPageFrom,
+                    to: auditPageTo,
+                    total: filteredAuditLogs.length,
+                  })}
+                </p>
+                <div className="flex items-center gap-3">
+                  <Button
+                    variant="outline"
+                    disabled={safeAuditPage <= 1}
+                    onClick={() => setAuditPage((page) => Math.max(1, page - 1))}
+                  >
+                    {t("admin.previousPage")}
+                  </Button>
+                  <span className="rounded-full bg-gray-100 px-3 py-2 text-xs font-semibold text-gray-700">
+                    {t("admin.auditPageIndicator", {
+                      current: safeAuditPage,
+                      total: auditPageCount,
+                    })}
+                  </span>
+                  <Button
+                    variant="outline"
+                    disabled={safeAuditPage >= auditPageCount}
+                    onClick={() => setAuditPage((page) => Math.min(auditPageCount, page + 1))}
+                  >
+                    {t("admin.nextPage")}
+                  </Button>
+                </div>
               </div>
             </section>
           </div>
