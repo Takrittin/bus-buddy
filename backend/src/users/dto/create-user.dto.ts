@@ -1,5 +1,6 @@
 import {
   IsArray,
+  IsBoolean,
   IsEmail,
   IsIn,
   IsNotEmpty,
@@ -21,6 +22,22 @@ export class CreateUserDto {
   @IsIn(USER_ROLES)
   @IsOptional()
   role?: UserRole;
+
+  @IsString()
+  @IsOptional()
+  operatorName?: string;
+
+  @IsString()
+  @IsOptional()
+  depotName?: string;
+
+  @IsBoolean()
+  @IsOptional()
+  isActive?: boolean;
+
+  @IsBoolean()
+  @IsOptional()
+  mustResetPassword?: boolean;
 
   @IsString()
   @IsNotEmpty()

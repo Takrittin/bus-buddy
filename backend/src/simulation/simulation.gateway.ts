@@ -11,6 +11,10 @@ export class SimulationGateway {
 
   private readonly logger = new Logger(SimulationGateway.name);
 
+  isReady() {
+    return Boolean(this.server);
+  }
+
   emitBusLocationUpdate(payload: object) {
     if (!this.server) {
       this.logger.warn('Socket server is not ready for bus updates yet.');

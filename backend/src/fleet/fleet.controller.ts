@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Get, Headers, Param, Patch, Post } from '@nestjs/common';
 import { FleetService } from './fleet.service';
 import { CreateDriverShiftDto } from './dto/create-driver-shift.dto';
 import { UpdateDriverShiftDto } from './dto/update-driver-shift.dto';
@@ -9,33 +9,36 @@ export class FleetController {
   constructor(private readonly fleetService: FleetService) {}
 
   @Get('buses')
-  getBuses() {
-    return this.fleetService.getBuses();
+  getBuses(@Headers('x-busbuddy-user-id') actorUserId?: string) {
+    return this.fleetService.getBuses(actorUserId);
   }
 
   @Get('buses/:busId')
-  getBus(@Param('busId') busId: string) {
-    return this.fleetService.getBus(busId);
+  getBus(@Param('busId') busId: string, @Headers('x-busbuddy-user-id') actorUserId?: string) {
+    return this.fleetService.getBus(busId, actorUserId);
   }
 
   @Get('drivers')
-  getDrivers() {
-    return this.fleetService.getDrivers();
+  getDrivers(@Headers('x-busbuddy-user-id') actorUserId?: string) {
+    return this.fleetService.getDrivers(actorUserId);
   }
 
   @Get('drivers/:driverId')
-  getDriver(@Param('driverId') driverId: string) {
-    return this.fleetService.getDriver(driverId);
+  getDriver(
+    @Param('driverId') driverId: string,
+    @Headers('x-busbuddy-user-id') actorUserId?: string,
+  ) {
+    return this.fleetService.getDriver(driverId, actorUserId);
   }
 
   @Get('shifts')
-  getDriverShifts() {
-    return this.fleetService.getDriverShifts();
+  getDriverShifts(@Headers('x-busbuddy-user-id') actorUserId?: string) {
+    return this.fleetService.getDriverShifts(actorUserId);
   }
 
   @Get('shifts/current')
-  getCurrentDriverShifts() {
-    return this.fleetService.getCurrentDriverShifts();
+  getCurrentDriverShifts(@Headers('x-busbuddy-user-id') actorUserId?: string) {
+    return this.fleetService.getCurrentDriverShifts(actorUserId);
   }
 
   @Post('shifts')

@@ -20,6 +20,10 @@ export function canUseRiderTools(role?: UserRole | null) {
   return RIDER_TOOL_ROLES.has(role);
 }
 
+export function canAccessAdmin(role?: UserRole | null) {
+  return role === "ADMIN";
+}
+
 export function isFleetManager(role?: UserRole | null) {
   return role === "FLEET";
 }

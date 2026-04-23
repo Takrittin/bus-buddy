@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { AdminModule } from './admin/admin.module';
 import { AiModule } from './ai/ai.module';
 import { AuthModule } from './auth/auth.module';
 import { BusesModule } from './buses/buses.module';
@@ -11,6 +12,7 @@ import { UsersModule } from './users/users.module';
 
 @Module({
   imports: [
+    AdminModule,
     AiModule,
     AuthModule,
     BusesModule,

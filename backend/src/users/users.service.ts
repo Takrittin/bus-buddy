@@ -1,4 +1,5 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { resolveRequestActor } from "../common/request-actor";
 import { PrismaService } from "../prisma/prisma.service";
 import { CreateUserDto } from "./dto/create-user.dto";
 import { UpdateUserDto } from "./dto/update-user.dto";
@@ -48,6 +49,10 @@ export class UsersService {
       email,
       name,
       role,
+      operatorName,
+      depotName,
+      isActive,
+      mustResetPassword,
       favoriteStopIds,
       password,
     } = createUserDto;
@@ -58,6 +63,10 @@ export class UsersService {
         email,
         name,
         role,
+        operatorName,
+        depotName,
+        isActive,
+        mustResetPassword,
         passwordHash,
         favoriteStops: favoriteStopIds ? {
           create: favoriteStopIds.map((id) => ({ stopId: id })),
@@ -100,6 +109,10 @@ export class UsersService {
       email,
       name,
       role,
+      operatorName,
+      depotName,
+      isActive,
+      mustResetPassword,
       favoriteStopIds,
       password,
     } = updateUserDto;
@@ -111,6 +124,10 @@ export class UsersService {
         email,
         name,
         role: role ?? undefined,
+        operatorName,
+        depotName,
+        isActive,
+        mustResetPassword,
         passwordHash: passwordHash ?? undefined,
         // Using deleteMany and create to accurately replace the connections based on user input
         favoriteStops: favoriteStopIds ? {
@@ -345,6 +362,30 @@ export class UsersService {
         userId,
       },
     });
+  }
+
+  async changePassword(
+    userId: string,
+    input: { password: string },
+    actorUserId?: string | null,
+  ) {
+    const actor = await resolveRequestActor(this.prisma, actorUserId);
+
+    if (actor.id !== userId && actor.role !== "ADMIN") {
+      throw new ForbiddenException("You cannot change another user's password.");
+    }
+
+    await this.ensureUserExists(userId);
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        passwordHash: await hashPassword(input.password),
+        mustResetPassword: false,
+      },
+    });
+
+    return { success: true };
   }
 
   private async ensureUserExists(userId: string) {

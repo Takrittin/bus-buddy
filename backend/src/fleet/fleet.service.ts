@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { BusServiceStatus, Prisma, RouteDirection, ShiftStatus } from '@prisma/client';
+import { requireFleetActor } from '../common/request-actor';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateDriverShiftDto } from './dto/create-driver-shift.dto';
 import { UpdateDriverShiftDto } from './dto/update-driver-shift.dto';
@@ -14,8 +15,11 @@ import { CloseDriverShiftDto } from './dto/close-driver-shift.dto';
 export class FleetService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async getBuses() {
+  async getBuses(actorUserId?: string | null) {
+    const actor = await requireFleetActor(this.prisma, actorUserId);
+    const where = this.buildBusScope(actor);
     const buses = await this.prisma.bus.findMany({
+      where,
       include: {
         route: true,
         driver: true,
@@ -26,7 +30,8 @@ export class FleetService {
     return buses.map((bus) => this.toBusResponse(bus));
   }
 
-  async getBus(busId: string) {
+  async getBus(busId: string, actorUserId?: string | null) {
+    const actor = await requireFleetActor(this.prisma, actorUserId);
     const bus = await this.prisma.bus.findUnique({
       where: { id: busId },
       include: {
@@ -43,14 +48,19 @@ export class FleetService {
       throw new NotFoundException(`Bus ${busId} not found.`);
     }
 
+    this.ensureBusInScope(bus, actor);
+
     return {
       ...this.toBusResponse(bus),
       shifts: bus.shifts.map((shift) => this.toShiftResponse(shift)),
     };
   }
 
-  async getDrivers() {
+  async getDrivers(actorUserId?: string | null) {
+    const actor = await requireFleetActor(this.prisma, actorUserId);
+    const where = this.buildDriverScope(actor);
     const drivers = await this.prisma.driver.findMany({
+      where,
       include: {
         buses: {
           include: {
@@ -82,7 +92,8 @@ export class FleetService {
     }));
   }
 
-  async getDriver(driverId: string) {
+  async getDriver(driverId: string, actorUserId?: string | null) {
+    const actor = await requireFleetActor(this.prisma, actorUserId);
     const driver = await this.prisma.driver.findUnique({
       where: { id: driverId },
       include: {
@@ -107,6 +118,8 @@ export class FleetService {
       throw new NotFoundException(`Driver ${driverId} not found.`);
     }
 
+    this.ensureDriverInScope(driver, actor);
+
     return {
       id: driver.id,
       employee_code: driver.employeeCode,
@@ -129,8 +142,10 @@ export class FleetService {
     };
   }
 
-  async getDriverShifts() {
+  async getDriverShifts(actorUserId?: string | null) {
+    const actor = await requireFleetActor(this.prisma, actorUserId);
     const shifts = await this.prisma.driverShift.findMany({
+      where: this.buildShiftScope(actor),
       include: {
         driver: true,
         bus: true,
@@ -149,9 +164,13 @@ export class FleetService {
     );
   }
 
-  async getCurrentDriverShifts() {
+  async getCurrentDriverShifts(actorUserId?: string | null) {
+    const actor = await requireFleetActor(this.prisma, actorUserId);
     const shifts = await this.prisma.driverShift.findMany({
-      where: { status: 'ACTIVE' },
+      where: {
+        status: 'ACTIVE',
+        ...this.buildShiftScope(actor),
+      },
       include: {
         driver: true,
         bus: true,
@@ -508,5 +527,83 @@ export class FleetService {
       bus_license_plate: shift.bus.licensePlate,
       route_number: shift.route.shortName,
     });
+  }
+
+  private buildBusScope(actor: Awaited<ReturnType<typeof requireFleetActor>>) {
+    if (actor.role === 'ADMIN') {
+      return {};
+    }
+
+    if (!actor.operatorName && !actor.depotName) {
+      return {};
+    }
+
+    return {
+      ...(actor.operatorName ? { operatorName: actor.operatorName } : {}),
+      ...(actor.depotName ? { depotName: actor.depotName } : {}),
+    } satisfies Prisma.BusWhereInput;
+  }
+
+  private buildDriverScope(actor: Awaited<ReturnType<typeof requireFleetActor>>) {
+    if (actor.role === 'ADMIN') {
+      return {};
+    }
+
+    if (!actor.operatorName && !actor.depotName) {
+      return {};
+    }
+
+    return {
+      ...(actor.operatorName ? { operatorName: actor.operatorName } : {}),
+      ...(actor.depotName ? { depotName: actor.depotName } : {}),
+    } satisfies Prisma.DriverWhereInput;
+  }
+
+  private buildShiftScope(actor: Awaited<ReturnType<typeof requireFleetActor>>) {
+    if (actor.role === 'ADMIN') {
+      return {};
+    }
+
+    if (!actor.operatorName && !actor.depotName) {
+      return {};
+    }
+
+    return {
+      bus: this.buildBusScope(actor),
+    } satisfies Prisma.DriverShiftWhereInput;
+  }
+
+  private ensureBusInScope(
+    bus: { operatorName?: string | null; depotName?: string | null },
+    actor: Awaited<ReturnType<typeof requireFleetActor>>,
+  ) {
+    if (actor.role === 'ADMIN') {
+      return;
+    }
+
+    if (actor.operatorName && bus.operatorName !== actor.operatorName) {
+      throw new NotFoundException('Bus not found.');
+    }
+
+    if (actor.depotName && bus.depotName !== actor.depotName) {
+      throw new NotFoundException('Bus not found.');
+    }
+  }
+
+  private ensureDriverInScope(
+    driver: { operatorName?: string | null; depotName?: string | null },
+    actor: Awaited<ReturnType<typeof requireFleetActor>>,
+  ) {
+    if (actor.role === 'ADMIN') {
+      return;
+    }
+
+    if (actor.operatorName && driver.operatorName !== actor.operatorName) {
+      throw new NotFoundException('Driver not found.');
+    }
+
+    if (actor.depotName && driver.depotName !== actor.depotName) {
+      throw new NotFoundException('Driver not found.');
+    }
   }
 }

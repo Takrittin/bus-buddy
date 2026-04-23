@@ -41,6 +41,15 @@ export class AiService {
     this.ai = apiKey ? new GoogleGenAI({ apiKey }) : null;
   }
 
+  getHealthStatus() {
+    return {
+      status: this.ai ? 'online' : 'degraded',
+      model: USER_ASSISTANT_MODEL,
+      configured: Boolean(this.ai),
+      checked_at: new Date().toISOString(),
+    };
+  }
+
   async replyToUserAssistant(userAssistantDto: UserAssistantDto) {
     return this.replyWithTools({
       message: userAssistantDto.message,

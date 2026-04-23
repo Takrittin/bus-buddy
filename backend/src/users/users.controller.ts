@@ -3,12 +3,13 @@ import {
   Controller,
   Delete,
   Get,
+  Headers,
   HttpCode,
   Param,
   Patch,
   Post,
 } from '@nestjs/common';
-import { IsBoolean, IsOptional, IsString, Min } from 'class-validator';
+import { IsBoolean, IsOptional, IsString, Min, MinLength } from 'class-validator';
 import { Type } from 'class-transformer';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -28,6 +29,12 @@ class CreateNotificationSubscriptionDto {
   @IsBoolean()
   @IsOptional()
   isActive?: boolean;
+}
+
+class ChangePasswordDto {
+  @IsString()
+  @MinLength(8)
+  password!: string;
 }
 
 @Controller('users')
@@ -98,6 +105,17 @@ export class UsersController {
     @Param('subscriptionId') subscriptionId: string,
   ) {
     await this.usersService.removeNotificationSubscription(id, subscriptionId);
+  }
+
+  @Post(':id/change-password')
+  changePassword(
+    @Param('id') id: string,
+    @Body() changePasswordDto: ChangePasswordDto,
+    @Headers('x-busbuddy-user-id') actorUserId?: string,
+  ) {
+    return this.usersService.changePassword(id, {
+      password: changePasswordDto.password,
+    }, actorUserId);
   }
 
   @Get(':id')

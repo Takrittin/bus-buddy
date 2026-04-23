@@ -6,6 +6,6 @@ import { TransitPersistenceService } from './transit-persistence.service';
 @Module({
   imports: [PrismaModule],
   providers: [TransitStateService, TransitPersistenceService],
-  exports: [TransitStateService],
+  exports: [TransitStateService, TransitPersistenceService],
 })
 export class TransitModule {}

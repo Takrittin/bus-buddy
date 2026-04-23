@@ -1,5 +1,5 @@
 import { fetchApi } from "@/lib/api-client";
-import { LoginInput, RegisterInput, Session, UserRole } from "@/types/auth";
+import { ChangePasswordInput, LoginInput, RegisterInput, Session, UserRole } from "@/types/auth";
 
 const SESSION_STORAGE_VERSION = 1;
 const SESSION_STORAGE_KEY = `busbuddy.session.v${SESSION_STORAGE_VERSION}`;
@@ -11,6 +11,11 @@ interface AuthResponse {
     email: string;
     name?: string | null;
     role: UserRole;
+    operatorName?: string | null;
+    depotName?: string | null;
+    isActive?: boolean;
+    mustResetPassword?: boolean;
+    lastLoginAt?: string | null;
   };
 }
 
@@ -21,6 +26,11 @@ function buildSession(user: AuthResponse["user"]): Session {
       email: user.email,
       name: user.name,
       role: user.role,
+      operatorName: user.operatorName,
+      depotName: user.depotName,
+      isActive: user.isActive ?? true,
+      mustResetPassword: user.mustResetPassword ?? false,
+      lastLoginAt: user.lastLoginAt ?? null,
       isGuest: false,
     },
     expires: new Date(Date.now() + SESSION_DURATION_MS).toISOString(),
@@ -96,4 +106,27 @@ export async function register(registerInput: RegisterInput) {
   const session = buildSession(response.user);
   storeSession(session);
   return session;
+}
+
+export async function changePassword(userId: string, input: ChangePasswordInput) {
+  await fetchApi(`/users/${userId}/change-password`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+
+  const storedSession = readStoredSession();
+
+  if (storedSession?.user?.id === userId) {
+    const nextSession: Session = {
+      ...storedSession,
+      user: {
+        ...storedSession.user,
+        mustResetPassword: false,
+      },
+    };
+    storeSession(nextSession);
+    return nextSession;
+  }
+
+  return storedSession;
 }

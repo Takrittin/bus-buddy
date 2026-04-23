@@ -2,14 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BusFront, Map, Heart, Settings, Bell } from "lucide-react";
+import { BusFront, Map, Heart, Settings, Bell, Shield } from "lucide-react";
 import { cn } from "@/components/ui/Button";
 import { useAuth } from "@/hooks/auth/useAuth";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 
 export function BottomNav() {
   const pathname = usePathname();
-  const { canAccessFleet, canUseRiderTools, isLoading, isFleetManager } = useAuth();
+  const { canAccessFleet, canUseRiderTools, isAdmin, isLoading, isFleetManager } = useAuth();
   const { t } = useLanguage();
   const riderTabs = [
     { name: t("nav.map"), href: "/", icon: Map },
@@ -18,9 +18,14 @@ export function BottomNav() {
     { name: t("nav.settings"), href: "/settings", icon: Settings },
   ];
   const fleetTab = { name: t("nav.fleet"), href: "/fleet", icon: BusFront };
+  const adminTab = { name: "Admin", href: "/admin", icon: Shield };
   const fleetTabs = [
     { name: t("nav.map"), href: "/", icon: Map },
     fleetTab,
+    { name: t("nav.settings"), href: "/settings", icon: Settings },
+  ];
+  const adminTabs = [
+    adminTab,
     { name: t("nav.settings"), href: "/settings", icon: Settings },
   ];
 
@@ -28,8 +33,10 @@ export function BottomNav() {
     ? riderTabs
     : isFleetManager
       ? fleetTabs
-      : canAccessFleet && canUseRiderTools
-        ? [...riderTabs, fleetTab]
+      : isAdmin
+        ? adminTabs
+        : canAccessFleet && canUseRiderTools
+          ? [...riderTabs, fleetTab]
         : riderTabs;
 
   return (

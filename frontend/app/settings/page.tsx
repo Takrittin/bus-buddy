@@ -6,7 +6,7 @@ import { AppHeader } from "@/components/navigation/AppHeader";
 import { BottomNav } from "@/components/navigation/BottomNav";
 import { Button } from "@/components/ui/Button";
 import { useAuth } from "@/hooks/auth/useAuth";
-import { canAccessFleet, formatUserRole } from "@/lib/auth/roles";
+import { canAccessAdmin, canAccessFleet, formatUserRole } from "@/lib/auth/roles";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { UserRole } from "@/types/auth";
 import { BusFront, LogIn, LogOut, Settings, Shield, UserPlus } from "lucide-react";
@@ -25,10 +25,13 @@ export default function SettingsPage() {
   const [role, setRole] = useState<UserRole>("USER");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const { user, isAuthenticated, isLoading, login, logout, register } = useAuth();
+  const [nextPassword, setNextPassword] = useState("");
+  const [passwordMessage, setPasswordMessage] = useState<string | null>(null);
+  const { user, isAuthenticated, isLoading, login, logout, register, changePassword } = useAuth();
   const { locale, setLocale, t } = useLanguage();
   const roleLabel = formatUserRole(user?.role, locale);
-  const showFleetShortcut = canAccessFleet(user?.role);
+  const showAdminShortcut = canAccessAdmin(user?.role);
+  const showFleetShortcut = canAccessFleet(user?.role) && !showAdminShortcut;
 
   useEffect(() => {
     setMode(initialMode);
@@ -67,6 +70,29 @@ export default function SettingsPage() {
       );
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleChangePassword = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (!user?.id) {
+      return;
+    }
+
+    setPasswordMessage(null);
+    setError(null);
+
+    try {
+      await changePassword(user.id, { password: nextPassword });
+      setNextPassword("");
+      setPasswordMessage("Password updated successfully.");
+    } catch (passwordError) {
+      setError(
+        passwordError instanceof Error
+          ? passwordError.message
+          : "Unable to change password.",
+      );
     }
   };
 
@@ -154,6 +180,38 @@ export default function SettingsPage() {
                     {t("settings.favoritesEnabled")}
                   </div>
 
+                  {user.mustResetPassword ? (
+                    <div className="rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                      This account must set a new password before returning to regular use.
+                    </div>
+                  ) : null}
+
+                  <form className="space-y-3 rounded-2xl border border-gray-100 bg-gray-50 p-4" onSubmit={handleChangePassword}>
+                    <div>
+                      <h4 className="text-sm font-semibold uppercase tracking-[0.12em] text-gray-700">
+                        Change Password
+                      </h4>
+                      <p className="mt-1 text-sm text-gray-500">
+                        Update the current account password and clear any reset-required flag.
+                      </p>
+                    </div>
+                    <input
+                      type="password"
+                      value={nextPassword}
+                      onChange={(event) => setNextPassword(event.target.value)}
+                      minLength={8}
+                      required
+                      placeholder="New password"
+                      className="w-full rounded-2xl border border-gray-200 px-4 py-3 outline-none transition-colors focus:border-brand"
+                    />
+                    {passwordMessage ? (
+                      <p className="text-sm text-green-700">{passwordMessage}</p>
+                    ) : null}
+                    <Button variant="outline" type="submit" className="w-full md:w-auto">
+                      Change Password
+                    </Button>
+                  </form>
+
                   <div className="flex flex-col gap-3 md:flex-row">
                     {showFleetShortcut ? (
                       <Button
@@ -163,6 +221,17 @@ export default function SettingsPage() {
                       >
                         <BusFront className="mr-2 h-4 w-4" />
                         {t("common.openFleetManager")}
+                      </Button>
+                    ) : null}
+
+                    {showAdminShortcut ? (
+                      <Button
+                        variant="outline"
+                        onClick={() => router.push("/admin")}
+                        className="w-full md:w-auto"
+                      >
+                        <Shield className="mr-2 h-4 w-4" />
+                        Open Admin Console
                       </Button>
                     ) : null}
 

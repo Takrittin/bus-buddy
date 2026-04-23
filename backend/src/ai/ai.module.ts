@@ -8,5 +8,6 @@ import { AiService } from './ai.service';
   imports: [TransitModule, FleetModule],
   controllers: [AiController],
   providers: [AiService],
+  exports: [AiService],
 })
 export class AiModule {}

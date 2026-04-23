@@ -2,7 +2,7 @@ import { useSession } from "@/lib/auth/AuthContext";
 import { canAccessFleet, canUseRiderTools, isFleetManager } from "@/lib/auth/roles";
 
 export function useAuth() {
-  const { session, status, login, register, logout } = useSession();
+  const { session, status, login, register, changePassword, logout } = useSession();
   const role = session?.user?.role ?? null;
 
   return {
@@ -17,6 +17,7 @@ export function useAuth() {
     isAdmin: role === "ADMIN",
     login,
     register,
+    changePassword,
     logout,
   };
 }

@@ -2,6 +2,7 @@ const BASE_URL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001").re
   /\/$/,
   "",
 );
+const SESSION_STORAGE_KEY = "busbuddy.session.v1";
 
 export function getApiBaseUrl() {
   return BASE_URL;
@@ -15,6 +16,26 @@ export async function fetchApi<T>(endpoint: string, options?: RequestInit): Prom
 
   if (options?.body && !(options.body instanceof FormData) && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
+  }
+
+  if (typeof window !== "undefined" && !headers.has("x-busbuddy-user-id")) {
+    try {
+      const rawSession = window.localStorage.getItem(SESSION_STORAGE_KEY);
+
+      if (rawSession) {
+        const parsedSession = JSON.parse(rawSession) as {
+          user?: {
+            id?: string;
+          };
+        };
+
+        if (parsedSession.user?.id) {
+          headers.set("x-busbuddy-user-id", parsedSession.user.id);
+        }
+      }
+    } catch {
+      // Ignore malformed local session payloads.
+    }
   }
 
   const response = await fetch(url, {

@@ -1,5 +1,6 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import {
+  Prisma,
   BusServiceStatus,
   DriverStatus,
   RouteDirection,
@@ -12,6 +13,15 @@ import { BANGKOK_ROUTE_SEEDS, BANGKOK_STOPS } from './bangkok-transit.data';
 @Injectable()
 export class TransitPersistenceService implements OnModuleInit {
   private readonly logger = new Logger(TransitPersistenceService.name);
+  private lastSyncStatus: {
+    status: 'pending' | 'success' | 'failed' | 'skipped';
+    checked_at: string;
+    message: string;
+  } = {
+    status: 'pending',
+    checked_at: new Date().toISOString(),
+    message: 'Transit sync has not run yet.',
+  };
 
   constructor(
     private readonly prisma: PrismaService,
@@ -22,6 +32,10 @@ export class TransitPersistenceService implements OnModuleInit {
     await this.syncTransitReferenceData();
   }
 
+  getLastSyncStatus() {
+    return this.lastSyncStatus;
+  }
+
   private async syncTransitReferenceData() {
     const isDatabaseReachable = await this.prisma.isDatabaseReachable();
 
@@ -29,6 +43,11 @@ export class TransitPersistenceService implements OnModuleInit {
       this.logger.warn(
         'Skipping stop and route sync because Postgres is currently unavailable.',
       );
+      this.lastSyncStatus = {
+        status: 'skipped',
+        checked_at: new Date().toISOString(),
+        message: 'Database unreachable during transit sync.',
+      };
       return;
     }
 
@@ -148,6 +167,7 @@ export class TransitPersistenceService implements OnModuleInit {
             licenseExpiryDate: new Date(record.driver.licenseExpiryDate),
             emergencyContactName: record.driver.emergencyContactName,
             emergencyContactPhone: record.driver.emergencyContactPhone,
+            operatorName: this.getOperatorName(record.depotName),
             depotName: record.driver.depotName,
             status: record.driver.status as DriverStatus,
           },
@@ -159,6 +179,7 @@ export class TransitPersistenceService implements OnModuleInit {
             licenseExpiryDate: new Date(record.driver.licenseExpiryDate),
             emergencyContactName: record.driver.emergencyContactName,
             emergencyContactPhone: record.driver.emergencyContactPhone,
+            operatorName: this.getOperatorName(record.depotName),
             depotName: record.driver.depotName,
             status: record.driver.status as DriverStatus,
           },
@@ -183,6 +204,7 @@ export class TransitPersistenceService implements OnModuleInit {
             capacity: record.capacity,
             routeId: record.routeId,
             driverId: record.driver.driverId,
+            operatorName: this.getOperatorName(record.depotName),
             depotName: record.depotName,
             serviceStatus: record.serviceStatus as BusServiceStatus,
           },
@@ -192,6 +214,7 @@ export class TransitPersistenceService implements OnModuleInit {
             capacity: record.capacity,
             routeId: record.routeId,
             driverId: record.driver.driverId,
+            operatorName: this.getOperatorName(record.depotName),
             depotName: record.depotName,
             serviceStatus: record.serviceStatus as BusServiceStatus,
           },
@@ -240,16 +263,71 @@ export class TransitPersistenceService implements OnModuleInit {
       this.logger.log(
         `Synced ${BANGKOK_STOPS.length} stops, ${BANGKOK_ROUTE_SEEDS.length} routes, ${driverIds.length} drivers, ${busIds.length} bus master records, and ${shiftIds.length} driver shifts.`,
       );
+      this.lastSyncStatus = {
+        status: 'success',
+        checked_at: new Date().toISOString(),
+        message: `Synced ${BANGKOK_STOPS.length} stops, ${BANGKOK_ROUTE_SEEDS.length} routes, ${driverIds.length} drivers, ${busIds.length} buses, and ${shiftIds.length} shifts.`,
+      };
+      await this.prisma.auditLog.create({
+        data: {
+          action: 'system.transit_sync.success',
+          targetType: 'system',
+          summary: this.lastSyncStatus.message,
+          metadata: this.lastSyncStatus as Prisma.InputJsonValue,
+        },
+      });
     } catch (error) {
       if (this.prisma.isConnectionError(error)) {
         this.logger.warn(
           'Postgres became unavailable while syncing stops and routes. The app will keep using in-memory transit data until the database returns.',
         );
+        this.lastSyncStatus = {
+          status: 'failed',
+          checked_at: new Date().toISOString(),
+          message: 'Database connection was lost during transit sync.',
+        };
         return;
+      }
+
+      this.lastSyncStatus = {
+        status: 'failed',
+        checked_at: new Date().toISOString(),
+        message:
+          error instanceof Error
+            ? error.message
+            : 'Unknown transit sync failure.',
+      };
+      try {
+        await this.prisma.auditLog.create({
+          data: {
+            action: 'system.transit_sync.failed',
+            targetType: 'system',
+            summary: this.lastSyncStatus.message,
+            metadata: this.lastSyncStatus as Prisma.InputJsonValue,
+          },
+        });
+      } catch {
+        // Ignore secondary logging failures.
       }
 
       throw error;
     }
+  }
+
+  private getOperatorName(depotName?: string | null) {
+    if (!depotName) {
+      return null;
+    }
+
+    if (depotName.toLowerCase().includes('airport')) {
+      return 'Airport Bus';
+    }
+
+    if (depotName.toLowerCase().includes('pak nam')) {
+      return 'Samut Prakan Transit';
+    }
+
+    return 'BMTA Mock Operations';
   }
 
   private buildShiftRecords(

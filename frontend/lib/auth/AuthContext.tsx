@@ -1,8 +1,9 @@
 "use client";
 
 import React, { createContext, useContext, useEffect, useState } from "react";
-import { LoginInput, RegisterInput, Session } from "@/types/auth";
+import { ChangePasswordInput, LoginInput, RegisterInput, Session } from "@/types/auth";
 import {
+  changePassword as changePasswordRequest,
   clearStoredSession,
   login as loginRequest,
   readStoredSession,
@@ -14,6 +15,7 @@ interface AuthContextType {
   status: "authenticated" | "unauthenticated" | "loading";
   login: (input: LoginInput) => Promise<Session>;
   register: (input: RegisterInput) => Promise<Session>;
+  changePassword: (userId: string, input: ChangePasswordInput) => Promise<Session | null>;
   logout: () => void;
 }
 
@@ -56,8 +58,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setStatus("unauthenticated");
   };
 
+  const changePassword = async (userId: string, input: ChangePasswordInput) => {
+    const nextSession = await changePasswordRequest(userId, input);
+
+    if (nextSession) {
+      setSession(nextSession);
+      setStatus("authenticated");
+    }
+
+    return nextSession;
+  };
+
   return (
-    <AuthContext.Provider value={{ session, status, login, register, logout }}>
+    <AuthContext.Provider value={{ session, status, login, register, changePassword, logout }}>
       {children}
     </AuthContext.Provider>
   );

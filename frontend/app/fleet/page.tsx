@@ -479,9 +479,10 @@ function buildRouteHealth(routes: Route[], buses: Bus[]) {
 export default function FleetPage() {
   const router = useRouter();
   const { locale, t } = useLanguage();
-  const { user, isAuthenticated, isLoading: isAuthLoading, canAccessFleet } = useAuth();
+  const { user, isAuthenticated, isLoading: isAuthLoading, canAccessFleet, isAdmin } = useAuth();
   const { buses, isLoading: isLoadingBuses } = useLiveBuses();
   const { routes, isLoading: isLoadingRoutes } = useRoutes();
+  const canUseFleetPage = canAccessFleet && !isAdmin;
   const {
     drivers,
     fleetBuses,
@@ -491,7 +492,7 @@ export default function FleetPage() {
     createShift,
     updateShift,
     closeShift,
-  } = useFleetOperations(isAuthenticated && canAccessFleet);
+  } = useFleetOperations(isAuthenticated && canUseFleetPage);
   const [selectedBusId, setSelectedBusId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedRouteId, setSelectedRouteId] = useState("all");
@@ -740,7 +741,7 @@ export default function FleetPage() {
     isAuthLoading ||
     isLoadingBuses ||
     isLoadingRoutes ||
-    (isAuthenticated && canAccessFleet && isLoadingFleetOperations);
+    (isAuthenticated && canUseFleetPage && isLoadingFleetOperations);
   const topAlertsPreview = alerts.slice(0, 3);
 
   const clearFilters = () => {
@@ -913,7 +914,7 @@ export default function FleetPage() {
                   }
                 />
               </section>
-            ) : !canAccessFleet ? (
+            ) : !canUseFleetPage ? (
               <section className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
                 <EmptyState
                   icon={<BusFront className="h-16 w-16 mx-auto" />}
@@ -1830,7 +1831,7 @@ export default function FleetPage() {
         <BusDetailSheet bus={selectedBus} onClose={() => setSelectedBusId(null)} />
       ) : null}
 
-      {isAuthenticated && canAccessFleet ? (
+      {isAuthenticated && canUseFleetPage ? (
         <FleetAssistantPanel
           selectedRouteId={selectedRouteId}
           selectedBusId={selectedBusId}

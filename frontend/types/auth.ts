@@ -6,6 +6,11 @@ export interface User {
   email?: string | null;
   image?: string | null;
   role: UserRole;
+  operatorName?: string | null;
+  depotName?: string | null;
+  isActive?: boolean;
+  mustResetPassword?: boolean;
+  lastLoginAt?: string | null;
   isGuest: boolean;
 }
 
@@ -24,4 +29,8 @@ export interface RegisterInput {
   password: string;
   name?: string;
   role?: UserRole;
+}
+
+export interface ChangePasswordInput {
+  password: string;
 }

@@ -38,13 +38,18 @@ enum ShiftStatus {
 }
 
 model User {
-  id           String   @id @default(uuid())
-  email        String   @unique
-  name         String?
-  role         UserRole @default(USER)
-  passwordHash String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id                String   @id @default(uuid())
+  email             String   @unique
+  name              String?
+  role              UserRole @default(USER)
+  passwordHash      String?
+  operatorName      String?
+  depotName         String?
+  isActive          Boolean  @default(true)
+  mustResetPassword Boolean  @default(false)
+  lastLoginAt       DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   favoriteStops  FavoriteStop[]
   subscriptions  NotificationSubscription[]
@@ -101,6 +106,7 @@ model Driver {
   licenseExpiryDate     DateTime?
   emergencyContactName  String?
   emergencyContactPhone String?
+  operatorName          String?
   depotName             String?
   status                DriverStatus @default(ACTIVE)
   createdAt             DateTime     @default(now())
@@ -118,6 +124,7 @@ model Bus {
   routeId       String?
   driverId      String?
   serviceStatus BusServiceStatus @default(AVAILABLE)
+  operatorName  String?
   depotName     String?
   createdAt     DateTime         @default(now())
   updatedAt     DateTime         @updatedAt
@@ -214,4 +221,19 @@ model EtaPrediction {
   stop  BusStop @relation(fields: [stopId], references: [id])
 
   @@unique([busId, routeId, stopId]) // Ensures we just update the latest ETA for a specific bus-route-stop combo
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorUserId String?
+  actorEmail String?
+  action     String
+  targetType String
+  targetId   String?
+  summary    String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([actorUserId, createdAt])
+  @@index([action, createdAt])
 }

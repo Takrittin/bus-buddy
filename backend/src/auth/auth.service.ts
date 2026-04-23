@@ -1,6 +1,7 @@
 import {
   ConflictException,
   Injectable,
+  ForbiddenException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
@@ -50,6 +51,10 @@ export class AuthService {
       throw new UnauthorizedException('Invalid email or password.');
     }
 
+    if (!user.isActive) {
+      throw new ForbiddenException('This account has been disabled.');
+    }
+
     const isValidPassword = await verifyPassword(
       loginDto.password,
       user.passwordHash,
@@ -59,7 +64,18 @@ export class AuthService {
       throw new UnauthorizedException('Invalid email or password.');
     }
 
-    const { passwordHash: _passwordHash, ...safeUser } = user;
+    const updatedUser = await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        lastLoginAt: new Date(),
+      },
+      include: {
+        favoriteStops: true,
+        subscriptions: true,
+      },
+    });
+
+    const { passwordHash: _passwordHash, ...safeUser } = updatedUser;
 
     return {
       user: safeUser,
