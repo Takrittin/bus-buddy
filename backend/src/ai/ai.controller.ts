@@ -1,5 +1,6 @@
-import { Body, Controller, Post } from '@nestjs/common';
+import { Body, Controller, Headers, Post } from '@nestjs/common';
 import { AiService } from './ai.service';
+import { AdminAssistantDto } from './dto/admin-assistant.dto';
 import { FleetAssistantDto } from './dto/fleet-assistant.dto';
 import { UserAssistantDto } from './dto/user-assistant.dto';
 
@@ -15,5 +16,18 @@ export class AiController {
   @Post('fleet-assistant')
   getFleetAssistantReply(@Body() fleetAssistantDto: FleetAssistantDto) {
     return this.aiService.replyToFleetAssistant(fleetAssistantDto);
+  }
+
+  @Post('admin-assistant')
+  getAdminAssistantReply(
+    @Body() adminAssistantDto: AdminAssistantDto,
+    @Headers('x-busbuddy-user-id') actorUserId?: string,
+    @Headers('x-busbuddy-session-version') actorSessionVersion?: string,
+  ) {
+    return this.aiService.replyToAdminAssistant(
+      adminAssistantDto,
+      actorUserId,
+      actorSessionVersion,
+    );
   }
 }

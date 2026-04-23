@@ -27,6 +27,10 @@ export class FleetAssistantDto {
   message!: string;
 
   @IsOptional()
+  @IsIn(['en', 'th'])
+  locale?: 'en' | 'th';
+
+  @IsOptional()
   @IsString()
   @MaxLength(500)
   summary?: string;

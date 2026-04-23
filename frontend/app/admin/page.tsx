@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AppHeader } from "@/components/navigation/AppHeader";
 import { BottomNav } from "@/components/navigation/BottomNav";
+import { AdminAssistantPanel } from "@/components/ai/AdminAssistantPanel";
 import { Button } from "@/components/ui/Button";
 import {
   createFleetAccount,
@@ -33,13 +34,20 @@ type EditableUser = Record<
 
 export default function AdminPage() {
   const router = useRouter();
-  const { isAuthenticated, isLoading, isAdmin } = useAuth();
+  const { user: currentUser, isAuthenticated, isLoading, isAdmin } = useAuth();
   const [users, setUsers] = useState<AdminUserRecord[]>([]);
   const [health, setHealth] = useState<SystemHealthSnapshot | null>(null);
   const [auditLogs, setAuditLogs] = useState<AuditLogRecord[]>([]);
   const [draftUsers, setDraftUsers] = useState<EditableUser>({});
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [userSearchQuery, setUserSearchQuery] = useState("");
+  const [roleFilter, setRoleFilter] = useState<"all" | UserRole>("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "disabled" | "deleted">("all");
+  const [auditActionFilter, setAuditActionFilter] = useState("all");
+  const [auditActorQuery, setAuditActorQuery] = useState("");
+  const [auditDateFrom, setAuditDateFrom] = useState("");
+  const [auditDateTo, setAuditDateTo] = useState("");
   const [fleetForm, setFleetForm] = useState({
     name: "",
     email: "",
@@ -102,22 +110,104 @@ export default function AdminPage() {
   }, [isAdmin, isAuthenticated, isLoading, router]);
 
   const stats = useMemo(() => {
-    const activeUsers = users.filter((user) => user.isActive).length;
+    const activeUsers = users.filter((user) => user.isActive && !user.deletedAt).length;
     const fleetAccounts = users.filter((user) => user.role === "FLEET").length;
     const passwordResetUsers = users.filter((user) => user.mustResetPassword).length;
 
     return { activeUsers, fleetAccounts, passwordResetUsers };
   }, [users]);
 
+  const filteredUsers = useMemo(() => {
+    const normalizedQuery = userSearchQuery.trim().toLowerCase();
+
+    return users.filter((user) => {
+      const matchesQuery =
+        !normalizedQuery ||
+        user.email.toLowerCase().includes(normalizedQuery) ||
+        (user.name ?? "").toLowerCase().includes(normalizedQuery);
+      const matchesRole = roleFilter === "all" || user.role === roleFilter;
+      const matchesStatus =
+        statusFilter === "all" ||
+        (statusFilter === "active" && user.isActive && !user.deletedAt) ||
+        (statusFilter === "disabled" && !user.isActive && !user.deletedAt) ||
+        (statusFilter === "deleted" && Boolean(user.deletedAt));
+
+      return matchesQuery && matchesRole && matchesStatus;
+    });
+  }, [roleFilter, statusFilter, userSearchQuery, users]);
+
+  const auditActionOptions = useMemo(
+    () => ["all", ...Array.from(new Set(auditLogs.map((log) => log.action))).sort()],
+    [auditLogs],
+  );
+
+  const filteredAuditLogs = useMemo(() => {
+    const actorQuery = auditActorQuery.trim().toLowerCase();
+    const fromTime = auditDateFrom ? new Date(`${auditDateFrom}T00:00:00`).getTime() : null;
+    const toTime = auditDateTo ? new Date(`${auditDateTo}T23:59:59`).getTime() : null;
+
+    return auditLogs.filter((log) => {
+      const createdTime = new Date(log.createdAt).getTime();
+      const matchesAction = auditActionFilter === "all" || log.action === auditActionFilter;
+      const matchesActor =
+        !actorQuery || (log.actorEmail ?? "system").toLowerCase().includes(actorQuery);
+      const matchesFrom = fromTime === null || createdTime >= fromTime;
+      const matchesTo = toTime === null || createdTime <= toTime;
+
+      return matchesAction && matchesActor && matchesFrom && matchesTo;
+    });
+  }, [auditActionFilter, auditActorQuery, auditDateFrom, auditDateTo, auditLogs]);
+
+  const getReason = (message: string) => {
+    const reason = window.prompt(message);
+    return reason?.trim() || null;
+  };
+
   const handleSaveUser = async (userId: string) => {
     const draft = draftUsers[userId];
+    const originalUser = users.find((user) => user.id === userId);
 
-    if (!draft) {
+    if (!draft || !originalUser) {
+      return;
+    }
+
+    const isSelf = currentUser?.id === userId;
+    const roleChanged = draft.role !== originalUser.role;
+    const promotedToAdmin = draft.role === "ADMIN" && originalUser.role !== "ADMIN";
+    const disabledAccount = draft.isActive === false && originalUser.isActive;
+    const resetFlagAdded = draft.mustResetPassword && !originalUser.mustResetPassword;
+
+    if (isSelf && (draft.role !== "ADMIN" || draft.isActive === false)) {
+      setError("You cannot demote or disable your own admin account.");
+      return;
+    }
+
+    if (promotedToAdmin || disabledAccount) {
+      const confirmed = window.confirm(
+        `${promotedToAdmin ? "Promote this user to ADMIN" : "Disable this account"}?\n\nThis will revoke existing sessions.`,
+      );
+
+      if (!confirmed) {
+        return;
+      }
+    }
+
+    const reason =
+      roleChanged || disabledAccount || resetFlagAdded
+        ? getReason("Reason for this admin action? This will be saved in the audit log.")
+        : null;
+
+    if ((roleChanged || disabledAccount || resetFlagAdded) && !reason) {
       return;
     }
 
     try {
-      const updatedUser = await updateAdminUser(userId, draft);
+      const updatedUser = await updateAdminUser(userId, {
+        role: draft.role,
+        isActive: draft.isActive,
+        mustResetPassword: draft.mustResetPassword,
+        reason: reason ?? undefined,
+      });
       setUsers((currentUsers) =>
         currentUsers.map((user) => (user.id === userId ? updatedUser : user)),
       );
@@ -133,10 +223,17 @@ export default function AdminPage() {
       return;
     }
 
+    const reason = getReason("Reason for resetting this password? This will revoke sessions.");
+
+    if (!reason) {
+      return;
+    }
+
     try {
       await resetAdminUserPassword(user.id, {
         newPassword,
         mustResetPassword: true,
+        reason,
       });
       await loadAdminData();
     } catch (resetError) {
@@ -147,16 +244,27 @@ export default function AdminPage() {
   };
 
   const handleDeleteUser = async (user: AdminUserRecord) => {
+    if (currentUser?.id === user.id) {
+      setError("You cannot delete your own admin account.");
+      return;
+    }
+
     const confirmed = window.confirm(
-      `Delete ${user.email}? This will remove their favorites and alert subscriptions too.`,
+      `Soft delete ${user.email}?\n\nThe account will be disabled and sessions revoked, but audit history will be kept.`,
     );
 
     if (!confirmed) {
       return;
     }
 
+    const reason = getReason("Reason for soft deleting this account?");
+
+    if (!reason) {
+      return;
+    }
+
     try {
-      await deleteAdminUser(user.id);
+      await deleteAdminUser(user.id, { reason });
       await loadAdminData();
     } catch (deleteError) {
       setError(deleteError instanceof Error ? deleteError.message : "Unable to delete user.");
@@ -266,6 +374,37 @@ export default function AdminPage() {
                   </div>
                 </div>
 
+                <div className="mt-6 grid gap-3 md:grid-cols-[1.4fr_0.8fr_0.8fr]">
+                  <input
+                    value={userSearchQuery}
+                    onChange={(event) => setUserSearchQuery(event.target.value)}
+                    placeholder="Search by name or email"
+                    className="rounded-2xl border border-gray-200 px-4 py-3 text-sm outline-none transition-colors focus:border-brand"
+                  />
+                  <select
+                    value={roleFilter}
+                    onChange={(event) => setRoleFilter(event.target.value as "all" | UserRole)}
+                    className="rounded-2xl border border-gray-200 px-4 py-3 text-sm outline-none transition-colors focus:border-brand"
+                  >
+                    <option value="all">All roles</option>
+                    <option value="USER">User</option>
+                    <option value="FLEET">Fleet</option>
+                    <option value="ADMIN">Admin</option>
+                  </select>
+                  <select
+                    value={statusFilter}
+                    onChange={(event) =>
+                      setStatusFilter(event.target.value as typeof statusFilter)
+                    }
+                    className="rounded-2xl border border-gray-200 px-4 py-3 text-sm outline-none transition-colors focus:border-brand"
+                  >
+                    <option value="all">All statuses</option>
+                    <option value="active">Active</option>
+                    <option value="disabled">Disabled</option>
+                    <option value="deleted">Deleted</option>
+                  </select>
+                </div>
+
                 <div className="mt-6 overflow-x-auto">
                   <table className="min-w-full divide-y divide-gray-100 text-left text-sm">
                     <thead>
@@ -278,11 +417,13 @@ export default function AdminPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {users.map((user) => {
+                      {filteredUsers.map((user) => {
                         const draft = draftUsers[user.id];
+                        const isSelf = currentUser?.id === user.id;
+                        const isDeleted = Boolean(user.deletedAt);
 
                         return (
-                          <tr key={user.id} className="align-top">
+                          <tr key={user.id} className={`align-top ${isDeleted ? "bg-gray-50 opacity-75" : ""}`}>
                             <td className="px-3 py-4">
                               <p className="font-semibold text-gray-900">
                                 {user.name || "Unnamed user"}
@@ -291,10 +432,16 @@ export default function AdminPage() {
                               <p className="mt-2 text-xs text-gray-400">
                                 Last login: {user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString() : "Never"}
                               </p>
+                              {isDeleted ? (
+                                <p className="mt-2 text-xs font-semibold text-red-600">
+                                  Deleted {new Date(user.deletedAt as string).toLocaleString()}
+                                </p>
+                              ) : null}
                             </td>
                             <td className="px-3 py-4">
                               <select
                                 value={draft?.role ?? user.role}
+                                disabled={isDeleted}
                                 onChange={(event) =>
                                   setDraftUsers((current) => ({
                                     ...current,
@@ -318,6 +465,7 @@ export default function AdminPage() {
                                 <input
                                   type="checkbox"
                                   checked={draft?.isActive ?? user.isActive}
+                                  disabled={isDeleted || isSelf}
                                   onChange={(event) =>
                                     setDraftUsers((current) => ({
                                       ...current,
@@ -334,6 +482,7 @@ export default function AdminPage() {
                                 <input
                                   type="checkbox"
                                   checked={draft?.mustResetPassword ?? user.mustResetPassword}
+                                  disabled={isDeleted}
                                   onChange={(event) =>
                                     setDraftUsers((current) => ({
                                       ...current,
@@ -355,6 +504,7 @@ export default function AdminPage() {
                               <Button
                                 variant="primary"
                                 className="w-full"
+                                disabled={isDeleted}
                                 onClick={() => void handleSaveUser(user.id)}
                               >
                                 Save
@@ -362,6 +512,7 @@ export default function AdminPage() {
                               <Button
                                 variant="outline"
                                 className="w-full"
+                                disabled={isDeleted}
                                 onClick={() => void handleResetPassword(user)}
                               >
                                 Reset Password
@@ -369,6 +520,7 @@ export default function AdminPage() {
                               <Button
                                 variant="ghost"
                                 className="w-full text-red-600 hover:bg-red-50 hover:text-red-700"
+                                disabled={isDeleted || isSelf}
                                 onClick={() => void handleDeleteUser(user)}
                               >
                                 Delete User
@@ -481,6 +633,38 @@ export default function AdminPage() {
                 Recent system changes, role updates, password resets, and transit sync events.
               </p>
 
+              <div className="mt-6 grid gap-3 md:grid-cols-4">
+                <select
+                  value={auditActionFilter}
+                  onChange={(event) => setAuditActionFilter(event.target.value)}
+                  className="rounded-2xl border border-gray-200 px-4 py-3 text-sm outline-none transition-colors focus:border-brand"
+                >
+                  {auditActionOptions.map((action) => (
+                    <option key={action} value={action}>
+                      {action === "all" ? "All actions" : action}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  value={auditActorQuery}
+                  onChange={(event) => setAuditActorQuery(event.target.value)}
+                  placeholder="Actor email"
+                  className="rounded-2xl border border-gray-200 px-4 py-3 text-sm outline-none transition-colors focus:border-brand"
+                />
+                <input
+                  type="date"
+                  value={auditDateFrom}
+                  onChange={(event) => setAuditDateFrom(event.target.value)}
+                  className="rounded-2xl border border-gray-200 px-4 py-3 text-sm outline-none transition-colors focus:border-brand"
+                />
+                <input
+                  type="date"
+                  value={auditDateTo}
+                  onChange={(event) => setAuditDateTo(event.target.value)}
+                  className="rounded-2xl border border-gray-200 px-4 py-3 text-sm outline-none transition-colors focus:border-brand"
+                />
+              </div>
+
               <div className="mt-6 overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-100 text-left text-sm">
                   <thead>
@@ -492,7 +676,7 @@ export default function AdminPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
-                    {auditLogs.map((log) => (
+                    {filteredAuditLogs.map((log) => (
                       <tr key={log.id}>
                         <td className="px-3 py-3 text-gray-500">
                           {new Date(log.createdAt).toLocaleString()}
@@ -501,7 +685,18 @@ export default function AdminPage() {
                           {log.actorEmail || "System"}
                         </td>
                         <td className="px-3 py-3 font-medium text-gray-900">{log.action}</td>
-                        <td className="px-3 py-3 text-gray-600">{log.summary || "-"}</td>
+                        <td className="px-3 py-3 text-gray-600">
+                          {log.summary || "-"}
+                          {typeof log.metadata === "object" &&
+                          log.metadata &&
+                          "reason" in log.metadata &&
+                          typeof log.metadata.reason === "string" &&
+                          log.metadata.reason ? (
+                            <p className="mt-1 text-xs text-gray-400">
+                              Reason: {log.metadata.reason}
+                            </p>
+                          ) : null}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -511,6 +706,8 @@ export default function AdminPage() {
           </div>
         </main>
       </div>
+
+      {isAuthenticated && isAdmin ? <AdminAssistantPanel activeSection="admin-console" /> : null}
     </div>
   );
 }

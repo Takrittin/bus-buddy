@@ -9,7 +9,9 @@ export interface AdminUserRecord {
   depotName?: string | null;
   isActive: boolean;
   mustResetPassword: boolean;
+  sessionVersion: number;
   lastLoginAt?: string | null;
+  deletedAt?: string | null;
   favoriteStopCount: number;
   notificationCount: number;
   createdAt: string;
@@ -24,6 +26,7 @@ export interface UpdateAdminUserInput {
   depotName?: string;
   isActive?: boolean;
   mustResetPassword?: boolean;
+  reason?: string;
 }
 
 export interface CreateFleetAccountInput {

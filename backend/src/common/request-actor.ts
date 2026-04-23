@@ -12,11 +12,14 @@ export type RequestActor = {
   depotName: string | null;
   isActive: boolean;
   mustResetPassword: boolean;
+  sessionVersion: number;
+  deletedAt: Date | null;
 };
 
 export async function resolveRequestActor(
   prisma: PrismaService,
   actorUserId?: string | null,
+  actorSessionVersion?: string | number | null,
 ) {
   if (!actorUserId) {
     throw new UnauthorizedException('Missing user session.');
@@ -32,11 +35,21 @@ export async function resolveRequestActor(
       depotName: true,
       isActive: true,
       mustResetPassword: true,
+      sessionVersion: true,
+      deletedAt: true,
     },
   });
 
-  if (!actor || !actor.isActive) {
+  if (!actor || !actor.isActive || actor.deletedAt) {
     throw new UnauthorizedException('This account is unavailable.');
+  }
+
+  if (
+    actorSessionVersion !== undefined &&
+    actorSessionVersion !== null &&
+    Number(actorSessionVersion) !== actor.sessionVersion
+  ) {
+    throw new UnauthorizedException('This session has been revoked. Please log in again.');
   }
 
   return actor as RequestActor;
@@ -45,8 +58,9 @@ export async function resolveRequestActor(
 export async function requireAdminActor(
   prisma: PrismaService,
   actorUserId?: string | null,
+  actorSessionVersion?: string | number | null,
 ) {
-  const actor = await resolveRequestActor(prisma, actorUserId);
+  const actor = await resolveRequestActor(prisma, actorUserId, actorSessionVersion);
 
   if (actor.role !== 'ADMIN') {
     throw new ForbiddenException('Admin access is required.');
@@ -58,8 +72,9 @@ export async function requireAdminActor(
 export async function requireFleetActor(
   prisma: PrismaService,
   actorUserId?: string | null,
+  actorSessionVersion?: string | number | null,
 ) {
-  const actor = await resolveRequestActor(prisma, actorUserId);
+  const actor = await resolveRequestActor(prisma, actorUserId, actorSessionVersion);
 
   if (actor.role !== 'ADMIN' && actor.role !== 'FLEET') {
     throw new ForbiddenException('Fleet access is required.');

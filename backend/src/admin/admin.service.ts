@@ -14,6 +14,7 @@ import { TransitPersistenceService } from '../transit/transit-persistence.servic
 import { hashPassword } from '../users/password.util';
 import { AdminAuditService } from './admin-audit.service';
 import { CreateFleetAccountDto } from './dto/create-fleet-account.dto';
+import { DeleteUserDto } from './dto/delete-user.dto';
 import { ResetUserPasswordDto } from './dto/reset-user-password.dto';
 import { UpdateAdminUserDto } from './dto/update-admin-user.dto';
 
@@ -28,8 +29,8 @@ export class AdminService {
     private readonly auditService: AdminAuditService,
   ) {}
 
-  async getUsers(actorUserId?: string | null) {
-    await requireAdminActor(this.prisma, actorUserId);
+  async getUsers(actorUserId?: string | null, actorSessionVersion?: string | null) {
+    await requireAdminActor(this.prisma, actorUserId, actorSessionVersion);
 
     const users = await this.prisma.user.findMany({
       include: {
@@ -51,13 +52,30 @@ export class AdminService {
     userId: string,
     dto: UpdateAdminUserDto,
     actorUserId?: string | null,
+    actorSessionVersion?: string | null,
   ) {
-    const actor = await requireAdminActor(this.prisma, actorUserId);
+    const actor = await requireAdminActor(this.prisma, actorUserId, actorSessionVersion);
     const existingUser = await this.prisma.user.findUnique({ where: { id: userId } });
 
     if (!existingUser) {
       throw new NotFoundException('User not found.');
     }
+
+    if (existingUser.deletedAt) {
+      throw new BadRequestException('Restore deleted users before editing them.');
+    }
+
+    if (
+      actor.id === userId &&
+      ((dto.role && dto.role !== UserRole.ADMIN) || dto.isActive === false)
+    ) {
+      throw new BadRequestException('You cannot demote or disable your own admin account.');
+    }
+
+    const shouldRevokeSessions =
+      dto.role !== undefined ||
+      dto.isActive === false ||
+      dto.mustResetPassword === true;
 
     if (dto.email && dto.email !== existingUser.email) {
       const emailTaken = await this.prisma.user.findUnique({
@@ -90,6 +108,8 @@ export class AdminService {
               : null,
         isActive: dto.isActive,
         mustResetPassword: dto.mustResetPassword,
+        deletedAt: dto.isActive === true ? null : undefined,
+        sessionVersion: shouldRevokeSessions ? { increment: 1 } : undefined,
       },
       include: {
         favoriteStops: {
@@ -116,6 +136,7 @@ export class AdminService {
           operatorName: existingUser.operatorName,
           depotName: existingUser.depotName,
           mustResetPassword: existingUser.mustResetPassword,
+          sessionVersion: existingUser.sessionVersion,
         },
         after: {
           role: updatedUser.role,
@@ -123,7 +144,9 @@ export class AdminService {
           operatorName: updatedUser.operatorName,
           depotName: updatedUser.depotName,
           mustResetPassword: updatedUser.mustResetPassword,
+          sessionVersion: updatedUser.sessionVersion,
         },
+        reason: dto.reason?.trim() || null,
       } as Prisma.InputJsonValue,
     });
 
@@ -134,8 +157,9 @@ export class AdminService {
     userId: string,
     dto: ResetUserPasswordDto,
     actorUserId?: string | null,
+    actorSessionVersion?: string | null,
   ) {
-    const actor = await requireAdminActor(this.prisma, actorUserId);
+    const actor = await requireAdminActor(this.prisma, actorUserId, actorSessionVersion);
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
 
     if (!user) {
@@ -147,6 +171,7 @@ export class AdminService {
       data: {
         passwordHash: await hashPassword(dto.newPassword),
         mustResetPassword: dto.mustResetPassword ?? true,
+        sessionVersion: { increment: 1 },
       },
     });
 
@@ -159,14 +184,20 @@ export class AdminService {
       summary: `Reset password for ${user.email}`,
       metadata: {
         mustResetPassword: dto.mustResetPassword ?? true,
+        reason: dto.reason?.trim() || null,
       } as Prisma.InputJsonValue,
     });
 
     return { success: true };
   }
 
-  async deleteUser(userId: string, actorUserId?: string | null) {
-    const actor = await requireAdminActor(this.prisma, actorUserId);
+  async deleteUser(
+    userId: string,
+    dto: DeleteUserDto,
+    actorUserId?: string | null,
+    actorSessionVersion?: string | null,
+  ) {
+    const actor = await requireAdminActor(this.prisma, actorUserId, actorSessionVersion);
 
     if (actor.id === userId) {
       throw new BadRequestException('You cannot delete your own admin account.');
@@ -178,11 +209,14 @@ export class AdminService {
       throw new NotFoundException('User not found.');
     }
 
-    await this.prisma.$transaction([
-      this.prisma.notificationSubscription.deleteMany({ where: { userId } }),
-      this.prisma.favoriteStop.deleteMany({ where: { userId } }),
-      this.prisma.user.delete({ where: { id: userId } }),
-    ]);
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        isActive: false,
+        deletedAt: new Date(),
+        sessionVersion: { increment: 1 },
+      },
+    });
 
     await this.auditService.log({
       actorUserId: actor.id,
@@ -195,6 +229,8 @@ export class AdminService {
         role: user.role,
         operatorName: user.operatorName,
         depotName: user.depotName,
+        softDelete: true,
+        reason: dto.reason?.trim() || null,
       } as Prisma.InputJsonValue,
     });
   }
@@ -202,8 +238,9 @@ export class AdminService {
   async createFleetAccount(
     dto: CreateFleetAccountDto,
     actorUserId?: string | null,
+    actorSessionVersion?: string | null,
   ) {
-    const actor = await requireAdminActor(this.prisma, actorUserId);
+    const actor = await requireAdminActor(this.prisma, actorUserId, actorSessionVersion);
 
     const existingUser = await this.prisma.user.findUnique({
       where: { email: dto.email },
@@ -252,8 +289,8 @@ export class AdminService {
     return this.toAdminUserResponse(user);
   }
 
-  async getSystemHealth(actorUserId?: string | null) {
-    await requireAdminActor(this.prisma, actorUserId);
+  async getSystemHealth(actorUserId?: string | null, actorSessionVersion?: string | null) {
+    await requireAdminActor(this.prisma, actorUserId, actorSessionVersion);
 
     const [databaseReachable, busCount, activeShiftCount] = await Promise.all([
       this.prisma.isDatabaseReachable(),
@@ -286,8 +323,8 @@ export class AdminService {
     };
   }
 
-  async getAuditLogs(actorUserId?: string | null) {
-    await requireAdminActor(this.prisma, actorUserId);
+  async getAuditLogs(actorUserId?: string | null, actorSessionVersion?: string | null) {
+    await requireAdminActor(this.prisma, actorUserId, actorSessionVersion);
 
     const logs = await this.prisma.auditLog.findMany({
       orderBy: { createdAt: 'desc' },
@@ -307,8 +344,8 @@ export class AdminService {
     }));
   }
 
-  async getScopedFleetPreview(actorUserId?: string | null) {
-    await requireAdminActor(this.prisma, actorUserId);
+  async getScopedFleetPreview(actorUserId?: string | null, actorSessionVersion?: string | null) {
+    await requireAdminActor(this.prisma, actorUserId, actorSessionVersion);
 
     const [buses, drivers, shifts] = await Promise.all([
       this.fleetService.getBuses(actorUserId),
@@ -332,7 +369,9 @@ export class AdminService {
     depotName: string | null;
     isActive: boolean;
     mustResetPassword: boolean;
+    sessionVersion: number;
     lastLoginAt: Date | null;
+    deletedAt: Date | null;
     createdAt: Date;
     updatedAt: Date;
     favoriteStops?: Array<{ id: string }>;
@@ -347,7 +386,9 @@ export class AdminService {
       depot_name: user.depotName,
       is_active: user.isActive,
       must_reset_password: user.mustResetPassword,
+      session_version: user.sessionVersion,
       last_login_at: user.lastLoginAt?.toISOString() ?? null,
+      deleted_at: user.deletedAt?.toISOString() ?? null,
       favorite_stop_count: user.favoriteStops?.length ?? 0,
       notification_count: user.subscriptions?.length ?? 0,
       created_at: user.createdAt.toISOString(),

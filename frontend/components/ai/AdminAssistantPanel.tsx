@@ -2,7 +2,7 @@
 
 import React, { useMemo, useState } from "react";
 import { Bot, MessageCircle, SendHorizonal, Sparkles, X } from "lucide-react";
-import { askFleetAssistant } from "@/services/ai";
+import { askAdminAssistant } from "@/services/ai";
 import { Button } from "@/components/ui/Button";
 import { UserAssistantMessage } from "@/types/ai";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
@@ -10,15 +10,7 @@ import { useLanguage } from "@/lib/i18n/LanguageContext";
 const MAX_CLIENT_HISTORY_MESSAGES = 4;
 const MAX_CLIENT_HISTORY_CHARS = 220;
 
-export function FleetAssistantPanel({
-  selectedRouteId,
-  selectedBusId,
-  activeTab,
-}: {
-  selectedRouteId?: string | null;
-  selectedBusId?: string | null;
-  activeTab: "overview" | "alerts" | "vehicles" | "shifts";
-}) {
+export function AdminAssistantPanel({ activeSection }: { activeSection?: string }) {
   const { locale, t } = useLanguage();
   const [isOpen, setIsOpen] = useState(false);
   const [inputValue, setInputValue] = useState("");
@@ -28,14 +20,14 @@ export function FleetAssistantPanel({
   const [messages, setMessages] = useState<UserAssistantMessage[]>([
     {
       role: "assistant",
-      content: t("ai.fleetIntro"),
+      content: t("ai.adminIntro"),
     },
   ]);
 
   const suggestions = [
-    t("ai.suggestions.fleetRoute"),
-    t("ai.suggestions.fleetShifts"),
-    t("ai.suggestions.fleetTraffic"),
+    t("ai.suggestions.adminUsers"),
+    t("ai.suggestions.adminHealth"),
+    t("ai.suggestions.adminAudit"),
   ];
 
   const conversationHistory = useMemo(() => {
@@ -66,15 +58,12 @@ export function FleetAssistantPanel({
     setIsLoading(true);
 
     try {
-      const response = await askFleetAssistant({
+      const response = await askAdminAssistant({
         message: trimmedMessage,
         locale,
         summary: conversationSummary ?? undefined,
         history: conversationHistory,
-        selectedRouteId:
-          selectedRouteId && selectedRouteId !== "all" ? selectedRouteId : undefined,
-        selectedBusId: selectedBusId ?? undefined,
-        activeTab,
+        activeSection,
       });
 
       setConversationSummary(response.summary ?? null);
@@ -90,7 +79,7 @@ export function FleetAssistantPanel({
       setError(
         requestError instanceof Error
           ? requestError.message
-          : "Unable to reach the BusBuddy fleet assistant right now.",
+          : "Unable to reach the BusBuddy admin assistant right now.",
       );
     } finally {
       setIsLoading(false);
@@ -106,7 +95,7 @@ export function FleetAssistantPanel({
           className="rounded-full px-4 py-3 shadow-xl shadow-brand/20 md:px-5"
         >
           <MessageCircle className="mr-2 h-4 w-4" />
-          {t("ai.fleetOpen")}
+          {t("ai.adminOpen")}
         </Button>
       </div>
 
@@ -119,9 +108,9 @@ export function FleetAssistantPanel({
               </div>
               <div>
                 <p className="text-sm font-semibold uppercase tracking-[0.14em] text-brand">
-                  {t("ai.fleetTitle")}
+                  {t("ai.adminTitle")}
                 </p>
-                <p className="mt-1 text-sm text-gray-600">{t("ai.fleetSubtitle")}</p>
+                <p className="mt-1 text-sm text-gray-600">{t("ai.adminSubtitle")}</p>
               </div>
             </div>
 
@@ -129,29 +118,13 @@ export function FleetAssistantPanel({
               type="button"
               onClick={() => setIsOpen(false)}
               className="rounded-full bg-gray-100 p-2 text-gray-500 transition-colors hover:bg-gray-200"
-              aria-label="Close fleet AI assistant"
+              aria-label="Close admin AI assistant"
             >
               <X className="h-4 w-4" />
             </button>
           </div>
 
           <div className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
-            {selectedRouteId && selectedRouteId !== "all" ? (
-              <div className="rounded-2xl border border-orange-100 bg-orange-50 px-4 py-3 text-xs text-orange-900">
-                <span className="font-semibold">
-                  {t("ai.fleetContextRoute", { value: selectedRouteId })}
-                </span>
-              </div>
-            ) : null}
-
-            {selectedBusId ? (
-              <div className="rounded-2xl border border-orange-100 bg-orange-50 px-4 py-3 text-xs text-orange-900">
-                <span className="font-semibold">
-                  {t("ai.fleetContextBus", { value: selectedBusId })}
-                </span>
-              </div>
-            ) : null}
-
             {messages.map((message, index) => (
               <div
                 key={`${message.role}-${index}`}
@@ -167,7 +140,7 @@ export function FleetAssistantPanel({
 
             {isLoading ? (
               <div className="max-w-[88%] rounded-2xl bg-gray-100 px-4 py-3 text-sm text-gray-600">
-                {t("ai.fleetThinking")}
+                {t("ai.adminThinking")}
               </div>
             ) : null}
 
@@ -203,7 +176,7 @@ export function FleetAssistantPanel({
               <textarea
                 value={inputValue}
                 onChange={(event) => setInputValue(event.target.value)}
-                placeholder={t("ai.fleetPlaceholder")}
+                placeholder={t("ai.adminPlaceholder")}
                 rows={2}
                 className="min-h-[52px] flex-1 resize-none rounded-2xl border border-gray-200 px-4 py-3 text-sm text-gray-900 outline-none transition-colors focus:border-brand"
               />

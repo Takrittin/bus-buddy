@@ -29,4 +29,8 @@ export class UpdateAdminUserDto {
   @IsBoolean()
   @IsOptional()
   mustResetPassword?: boolean;
+
+  @IsString()
+  @IsOptional()
+  reason?: string;
 }

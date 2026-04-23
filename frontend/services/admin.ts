@@ -16,7 +16,9 @@ type ApiAdminUser = {
   depot_name?: string | null;
   is_active: boolean;
   must_reset_password: boolean;
+  session_version: number;
   last_login_at?: string | null;
+  deleted_at?: string | null;
   favorite_stop_count: number;
   notification_count: number;
   created_at: string;
@@ -54,7 +56,9 @@ function mapUser(user: ApiAdminUser): AdminUserRecord {
     depotName: user.depot_name,
     isActive: user.is_active,
     mustResetPassword: user.must_reset_password,
+    sessionVersion: user.session_version,
     lastLoginAt: user.last_login_at,
+    deletedAt: user.deleted_at,
     favoriteStopCount: user.favorite_stop_count,
     notificationCount: user.notification_count,
     createdAt: user.created_at,
@@ -77,7 +81,7 @@ export async function updateAdminUser(userId: string, input: UpdateAdminUserInpu
 
 export async function resetAdminUserPassword(
   userId: string,
-  input: { newPassword: string; mustResetPassword?: boolean },
+  input: { newPassword: string; mustResetPassword?: boolean; reason?: string },
 ) {
   return fetchApi<{ success: boolean }>(`/admin/users/${userId}/reset-password`, {
     method: "POST",
@@ -85,9 +89,10 @@ export async function resetAdminUserPassword(
   });
 }
 
-export async function deleteAdminUser(userId: string) {
+export async function deleteAdminUser(userId: string, input?: { reason?: string }) {
   await fetchApi(`/admin/users/${userId}`, {
     method: "DELETE",
+    body: JSON.stringify(input ?? {}),
   });
 }
 

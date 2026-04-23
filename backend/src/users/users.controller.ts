@@ -52,13 +52,22 @@ export class UsersController {
   }
 
   @Get(':id/favorite-stops')
-  getFavoriteStops(@Param('id') id: string) {
-    return this.usersService.getFavoriteStops(id);
+  getFavoriteStops(
+    @Param('id') id: string,
+    @Headers('x-busbuddy-user-id') actorUserId?: string,
+    @Headers('x-busbuddy-session-version') actorSessionVersion?: string,
+  ) {
+    return this.usersService.getFavoriteStops(id, actorUserId, actorSessionVersion);
   }
 
   @Post(':id/favorite-stops/:stopId')
-  addFavoriteStop(@Param('id') id: string, @Param('stopId') stopId: string) {
-    return this.usersService.addFavoriteStop(id, stopId);
+  addFavoriteStop(
+    @Param('id') id: string,
+    @Param('stopId') stopId: string,
+    @Headers('x-busbuddy-user-id') actorUserId?: string,
+    @Headers('x-busbuddy-session-version') actorSessionVersion?: string,
+  ) {
+    return this.usersService.addFavoriteStop(id, stopId, actorUserId, actorSessionVersion);
   }
 
   @Delete(':id/favorite-stops/:stopId')
@@ -66,13 +75,19 @@ export class UsersController {
   async removeFavoriteStop(
     @Param('id') id: string,
     @Param('stopId') stopId: string,
+    @Headers('x-busbuddy-user-id') actorUserId?: string,
+    @Headers('x-busbuddy-session-version') actorSessionVersion?: string,
   ) {
-    await this.usersService.removeFavoriteStop(id, stopId);
+    await this.usersService.removeFavoriteStop(id, stopId, actorUserId, actorSessionVersion);
   }
 
   @Get(':id/notification-subscriptions')
-  getNotificationSubscriptions(@Param('id') id: string) {
-    return this.usersService.getNotificationSubscriptions(id);
+  getNotificationSubscriptions(
+    @Param('id') id: string,
+    @Headers('x-busbuddy-user-id') actorUserId?: string,
+    @Headers('x-busbuddy-session-version') actorSessionVersion?: string,
+  ) {
+    return this.usersService.getNotificationSubscriptions(id, actorUserId, actorSessionVersion);
   }
 
   @Get(':id/notification-subscriptions/find/:stopId/:routeId')
@@ -80,14 +95,24 @@ export class UsersController {
     @Param('id') id: string,
     @Param('stopId') stopId: string,
     @Param('routeId') routeId: string,
+    @Headers('x-busbuddy-user-id') actorUserId?: string,
+    @Headers('x-busbuddy-session-version') actorSessionVersion?: string,
   ) {
-    return this.usersService.findNotificationSubscription(id, stopId, routeId);
+    return this.usersService.findNotificationSubscription(
+      id,
+      stopId,
+      routeId,
+      actorUserId,
+      actorSessionVersion,
+    );
   }
 
   @Post(':id/notification-subscriptions')
   addNotificationSubscription(
     @Param('id') id: string,
     @Body() createNotificationSubscriptionDto: CreateNotificationSubscriptionDto,
+    @Headers('x-busbuddy-user-id') actorUserId?: string,
+    @Headers('x-busbuddy-session-version') actorSessionVersion?: string,
   ) {
     return this.usersService.addNotificationSubscription({
       userId: id,
@@ -95,6 +120,8 @@ export class UsersController {
       routeId: createNotificationSubscriptionDto.routeId,
       leadTimeMinutes: createNotificationSubscriptionDto.leadTimeMinutes,
       isActive: createNotificationSubscriptionDto.isActive,
+      actorUserId,
+      actorSessionVersion,
     });
   }
 
@@ -103,8 +130,15 @@ export class UsersController {
   async removeNotificationSubscription(
     @Param('id') id: string,
     @Param('subscriptionId') subscriptionId: string,
+    @Headers('x-busbuddy-user-id') actorUserId?: string,
+    @Headers('x-busbuddy-session-version') actorSessionVersion?: string,
   ) {
-    await this.usersService.removeNotificationSubscription(id, subscriptionId);
+    await this.usersService.removeNotificationSubscription(
+      id,
+      subscriptionId,
+      actorUserId,
+      actorSessionVersion,
+    );
   }
 
   @Post(':id/change-password')
@@ -112,10 +146,11 @@ export class UsersController {
     @Param('id') id: string,
     @Body() changePasswordDto: ChangePasswordDto,
     @Headers('x-busbuddy-user-id') actorUserId?: string,
+    @Headers('x-busbuddy-session-version') actorSessionVersion?: string,
   ) {
     return this.usersService.changePassword(id, {
       password: changePasswordDto.password,
-    }, actorUserId);
+    }, actorUserId, actorSessionVersion);
   }
 
   @Get(':id')

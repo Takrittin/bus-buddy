@@ -10,7 +10,9 @@ export interface User {
   depotName?: string | null;
   isActive?: boolean;
   mustResetPassword?: boolean;
+  sessionVersion?: number;
   lastLoginAt?: string | null;
+  deletedAt?: string | null;
   isGuest: boolean;
 }
 

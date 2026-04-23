@@ -160,6 +160,13 @@ export const messages: Record<AppLocale, MessageNode> = {
       fleetContextBus: "Focused bus: {value}",
       fleetThinking: "Reviewing live fleet data...",
       fleetPlaceholder: "Ask about route health, delayed buses, or active shifts...",
+      adminOpen: "Ask Admin AI",
+      adminTitle: "Admin Assistant",
+      adminSubtitle: "User, health, and audit help from BusBuddy admin backend data only",
+      adminIntro:
+        "Ask me about user accounts, role changes, system health, or recent audit activity.",
+      adminThinking: "Reviewing admin backend data...",
+      adminPlaceholder: "Ask about users, system health, or audit logs...",
       suggestions: {
         nearestStop: "What is the nearest stop to me?",
         fastestRoute: "Which route arrives fastest at this stop?",
@@ -167,6 +174,9 @@ export const messages: Record<AppLocale, MessageNode> = {
         fleetRoute: "Which route needs attention right now?",
         fleetShifts: "Do we have any active shift risks now?",
         fleetTraffic: "Which buses are most affected by traffic?",
+        adminUsers: "Which users need admin attention?",
+        adminHealth: "Is the system healthy right now?",
+        adminAudit: "What changed recently in audit logs?",
       },
     },
     fleet: {
@@ -435,6 +445,13 @@ export const messages: Record<AppLocale, MessageNode> = {
       fleetContextBus: "รถที่โฟกัส: {value}",
       fleetThinking: "กำลังวิเคราะห์ข้อมูลฟลีทแบบเรียลไทม์...",
       fleetPlaceholder: "ถามเรื่อง route health รถล่าช้า หรือ active shifts...",
+      adminOpen: "ถาม Admin AI",
+      adminTitle: "ผู้ช่วยแอดมิน",
+      adminSubtitle: "ช่วยเรื่องผู้ใช้ สถานะระบบ และ audit โดยอ้างอิงข้อมูล admin backend เท่านั้น",
+      adminIntro:
+        "ถามได้เลยเรื่องบัญชีผู้ใช้ การเปลี่ยน role สถานะระบบ หรือ audit log ล่าสุด",
+      adminThinking: "กำลังตรวจข้อมูล admin backend...",
+      adminPlaceholder: "ถามเรื่อง users, system health หรือ audit logs...",
       suggestions: {
         nearestStop: "ป้ายใกล้ฉันที่สุดคืออะไร",
         fastestRoute: "สายไหนมาถึงเร็วสุดที่ป้ายนี้",
@@ -442,6 +459,9 @@ export const messages: Record<AppLocale, MessageNode> = {
         fleetRoute: "ตอนนี้สายไหนต้องโฟกัสที่สุด",
         fleetShifts: "ตอนนี้มีกะคนขับไหนเสี่ยงบ้าง",
         fleetTraffic: "รถคันไหนโดนจราจรมากที่สุด",
+        adminUsers: "มีผู้ใช้คนไหนที่ admin ควรดูไหม",
+        adminHealth: "ตอนนี้ระบบปกติดีไหม",
+        adminAudit: "audit logs ล่าสุดมีอะไรเปลี่ยนบ้าง",
       },
     },
     fleet: {

@@ -4,8 +4,13 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { FunctionDeclaration, GoogleGenAI } from '@google/genai';
+import { requireAdminActor } from '../common/request-actor';
 import { FleetService } from '../fleet/fleet.service';
+import { PrismaService } from '../prisma/prisma.service';
+import { SimulationGateway } from '../simulation/simulation.gateway';
+import { TransitPersistenceService } from '../transit/transit-persistence.service';
 import { TransitStateService } from '../transit/transit-state.service';
+import { AdminAssistantDto } from './dto/admin-assistant.dto';
 import { FleetAssistantDto } from './dto/fleet-assistant.dto';
 import { UserAssistantDto } from './dto/user-assistant.dto';
 
@@ -36,6 +41,9 @@ export class AiService {
   constructor(
     private readonly transitState: TransitStateService,
     private readonly fleetService: FleetService,
+    private readonly prisma: PrismaService,
+    private readonly transitPersistence: TransitPersistenceService,
+    private readonly simulationGateway: SimulationGateway,
   ) {
     const apiKey = process.env.GOOGLE_AI_API_KEY?.trim();
     this.ai = apiKey ? new GoogleGenAI({ apiKey }) : null;
@@ -58,8 +66,7 @@ export class AiService {
       tools: this.getUserTools(),
       systemInstruction: this.buildUserSystemInstruction(userAssistantDto),
       userContext: this.buildUserContext(userAssistantDto),
-      fallbackMessage:
-        'I could not verify that from BusBuddy backend data yet. Try asking about nearby stops, route numbers, live buses, or ETA.',
+      fallbackMessage: this.getFallbackMessage(userAssistantDto.locale, 'user'),
     });
   }
 
@@ -71,8 +78,25 @@ export class AiService {
       tools: this.getFleetTools(),
       systemInstruction: this.buildFleetSystemInstruction(fleetAssistantDto),
       userContext: this.buildFleetContext(fleetAssistantDto),
-      fallbackMessage:
-        'I could not verify that from BusBuddy fleet data yet. Try asking about route health, active shifts, delayed buses, or fleet operations.',
+      fallbackMessage: this.getFallbackMessage(fleetAssistantDto.locale, 'fleet'),
+    });
+  }
+
+  async replyToAdminAssistant(
+    adminAssistantDto: AdminAssistantDto,
+    actorUserId?: string | null,
+    actorSessionVersion?: string | null,
+  ) {
+    const actor = await requireAdminActor(this.prisma, actorUserId, actorSessionVersion);
+
+    return this.replyWithTools({
+      message: adminAssistantDto.message,
+      summary: adminAssistantDto.summary,
+      history: this.getTrimmedHistory(adminAssistantDto.history),
+      tools: this.getAdminTools(),
+      systemInstruction: this.buildAdminSystemInstruction(adminAssistantDto),
+      userContext: this.buildAdminContext(adminAssistantDto, actor.email),
+      fallbackMessage: this.getFallbackMessage(adminAssistantDto.locale, 'admin'),
     });
   }
 
@@ -270,6 +294,7 @@ export class AiService {
   private buildUserSystemInstruction(userAssistantDto: UserAssistantDto) {
     return [
       'You are BusBuddy for Bangkok bus riders.',
+      this.getLanguageInstruction(userAssistantDto.locale),
       'Answer only from BusBuddy backend tool data.',
       'Do not use outside knowledge or guess missing transit facts.',
       'Use tools for any stop, route, live bus, or ETA question.',
@@ -284,6 +309,7 @@ export class AiService {
   private buildFleetSystemInstruction(fleetAssistantDto: FleetAssistantDto) {
     return [
       'You are BusBuddy Fleet AI for Bangkok bus operations.',
+      this.getLanguageInstruction(fleetAssistantDto.locale),
       'Answer only from BusBuddy fleet and transit backend tool data.',
       'Do not use outside knowledge or guess missing operational facts.',
       'Use tools for route health, buses, drivers, shifts, and fleet issues.',
@@ -294,6 +320,53 @@ export class AiService {
     ]
       .filter(Boolean)
       .join(' ');
+  }
+
+  private buildAdminSystemInstruction(adminAssistantDto: AdminAssistantDto) {
+    return [
+      'You are BusBuddy Admin AI for system administrators.',
+      this.getLanguageInstruction(adminAssistantDto.locale),
+      'Answer only from BusBuddy admin backend tool data.',
+      'Do not use outside knowledge or guess missing admin facts.',
+      'Use tools for user, system health, audit log, and account-management questions.',
+      'Keep answers concise, admin-focused, and action-oriented.',
+      'Do not mention tool names in the final answer.',
+      adminAssistantDto.activeSection
+        ? `Current admin section: ${adminAssistantDto.activeSection}.`
+        : '',
+    ]
+      .filter(Boolean)
+      .join(' ');
+  }
+
+  private getLanguageInstruction(locale?: 'en' | 'th') {
+    return locale === 'th'
+      ? 'ตอบเป็นภาษาไทยเท่านั้น ยกเว้นชื่อ endpoint, role, action, email หรือ code ที่ควรคงภาษาอังกฤษ.'
+      : 'Reply in English only unless the user explicitly asks for another language.';
+  }
+
+  private getFallbackMessage(locale: 'en' | 'th' | undefined, mode: 'user' | 'fleet' | 'admin') {
+    if (locale === 'th') {
+      if (mode === 'admin') {
+        return 'ผมยังยืนยันคำตอบจากข้อมูล admin backend ไม่ได้ ลองถามเกี่ยวกับ users, system health หรือ audit log อีกครั้งครับ';
+      }
+
+      if (mode === 'fleet') {
+        return 'ผมยังยืนยันคำตอบจากข้อมูล fleet backend ไม่ได้ ลองถามเกี่ยวกับ route health, active shifts, delayed buses หรือ fleet operations ครับ';
+      }
+
+      return 'ผมยังยืนยันคำตอบจากข้อมูล BusBuddy backend ไม่ได้ ลองถามเกี่ยวกับป้ายใกล้คุณ สายรถ รถสด หรือ ETA ครับ';
+    }
+
+    if (mode === 'admin') {
+      return 'I could not verify that from BusBuddy admin backend data yet. Try asking about users, system health, or audit logs.';
+    }
+
+    if (mode === 'fleet') {
+      return 'I could not verify that from BusBuddy fleet data yet. Try asking about route health, active shifts, delayed buses, or fleet operations.';
+    }
+
+    return 'I could not verify that from BusBuddy backend data yet. Try asking about nearby stops, route numbers, live buses, or ETA.';
   }
 
   private buildUserContext(userAssistantDto: UserAssistantDto) {
@@ -331,6 +404,16 @@ export class AiService {
 
     if (fleetAssistantDto.activeTab) {
       parts.push(`Current tab ${fleetAssistantDto.activeTab}.`);
+    }
+
+    return parts.join(' ');
+  }
+
+  private buildAdminContext(adminAssistantDto: AdminAssistantDto, actorEmail: string) {
+    const parts = [`Admin actor ${actorEmail}.`];
+
+    if (adminAssistantDto.activeSection) {
+      parts.push(`Current section ${adminAssistantDto.activeSection}.`);
     }
 
     return parts.join(' ');
@@ -734,6 +817,158 @@ export class AiService {
           service_status: bus.service_status,
           depot_name: bus.depot_name,
         };
+      },
+    };
+
+    return {
+      declarations,
+      handlers,
+    };
+  }
+
+  private getAdminTools(): AssistantToolSet {
+    const declarations: FunctionDeclaration[] = [
+      {
+        name: 'get_admin_user_summary',
+        description:
+          'Get user counts and compact account records for admin user management.',
+        parametersJsonSchema: {
+          type: 'object',
+          properties: {
+            role: {
+              type: 'string',
+              description: 'Optional role filter: USER, FLEET, or ADMIN.',
+            },
+            status: {
+              type: 'string',
+              description: 'Optional status filter: active, disabled, or deleted.',
+            },
+          },
+        },
+      },
+      {
+        name: 'get_admin_system_health',
+        description: 'Get current backend, database, websocket, AI, and sync status.',
+        parametersJsonSchema: {
+          type: 'object',
+          properties: {},
+        },
+      },
+      {
+        name: 'get_admin_audit_logs',
+        description: 'Get recent audit logs, optionally filtered by action or actor email.',
+        parametersJsonSchema: {
+          type: 'object',
+          properties: {
+            action: { type: 'string', description: 'Optional action filter.' },
+            actorEmail: { type: 'string', description: 'Optional actor email filter.' },
+          },
+        },
+      },
+    ];
+
+    const handlers: Record<string, ToolCallHandler> = {
+      get_admin_user_summary: async (args) => {
+        const role = typeof args.role === 'string' ? args.role.toUpperCase() : undefined;
+        const status = typeof args.status === 'string' ? args.status.toLowerCase() : undefined;
+        const where = {
+          ...(role && ['USER', 'FLEET', 'ADMIN'].includes(role)
+            ? { role: role as 'USER' | 'FLEET' | 'ADMIN' }
+            : {}),
+          ...(status === 'active' ? { isActive: true, deletedAt: null } : {}),
+          ...(status === 'disabled' ? { isActive: false, deletedAt: null } : {}),
+          ...(status === 'deleted' ? { deletedAt: { not: null } } : {}),
+        };
+        const users = await this.prisma.user.findMany({
+          where,
+          orderBy: [{ createdAt: 'desc' }],
+          take: 25,
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            role: true,
+            isActive: true,
+            mustResetPassword: true,
+            deletedAt: true,
+            lastLoginAt: true,
+            createdAt: true,
+          },
+        });
+        const [totalUsers, admins, fleetManagers, activeUsers, deletedUsers] =
+          await Promise.all([
+            this.prisma.user.count(),
+            this.prisma.user.count({ where: { role: 'ADMIN' } }),
+            this.prisma.user.count({ where: { role: 'FLEET' } }),
+            this.prisma.user.count({ where: { isActive: true, deletedAt: null } }),
+            this.prisma.user.count({ where: { deletedAt: { not: null } } }),
+          ]);
+
+        return {
+          counts: {
+            total_users: totalUsers,
+            admins,
+            fleet_managers: fleetManagers,
+            active_users: activeUsers,
+            deleted_users: deletedUsers,
+          },
+          users: users.map((user) => ({
+            id: user.id,
+            email: user.email,
+            name: user.name,
+            role: user.role,
+            status: user.deletedAt
+              ? 'deleted'
+              : user.isActive
+                ? 'active'
+                : 'disabled',
+            must_reset_password: user.mustResetPassword,
+            last_login_at: user.lastLoginAt?.toISOString() ?? null,
+            created_at: user.createdAt.toISOString(),
+          })),
+        };
+      },
+      get_admin_system_health: async () => {
+        const databaseReachable = await this.prisma.isDatabaseReachable();
+        return {
+          backend: 'online',
+          database: databaseReachable ? 'online' : 'offline',
+          websocket: this.simulationGateway.isReady() ? 'online' : 'starting',
+          ai: this.getHealthStatus(),
+          transit_sync: this.transitPersistence.getLastSyncStatus(),
+          checked_at: new Date().toISOString(),
+        };
+      },
+      get_admin_audit_logs: async (args) => {
+        const action =
+          typeof args.action === 'string' && args.action.trim()
+            ? args.action.trim()
+            : undefined;
+        const actorEmail =
+          typeof args.actorEmail === 'string' && args.actorEmail.trim()
+            ? args.actorEmail.trim()
+            : undefined;
+        const logs = await this.prisma.auditLog.findMany({
+          where: {
+            ...(action ? { action } : {}),
+            ...(actorEmail
+              ? { actorEmail: { contains: actorEmail, mode: 'insensitive' } }
+              : {}),
+          },
+          orderBy: { createdAt: 'desc' },
+          take: 20,
+        });
+
+        return logs.map((log) => ({
+          id: log.id,
+          actor_email: log.actorEmail ?? 'System',
+          action: log.action,
+          target_type: log.targetType,
+          target_id: log.targetId,
+          summary: log.summary,
+          metadata: log.metadata,
+          created_at: log.createdAt.toISOString(),
+        }));
       },
     };
 

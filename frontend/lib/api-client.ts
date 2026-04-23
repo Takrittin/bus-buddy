@@ -26,11 +26,16 @@ export async function fetchApi<T>(endpoint: string, options?: RequestInit): Prom
         const parsedSession = JSON.parse(rawSession) as {
           user?: {
             id?: string;
+            sessionVersion?: number;
           };
         };
 
         if (parsedSession.user?.id) {
           headers.set("x-busbuddy-user-id", parsedSession.user.id);
+        }
+
+        if (parsedSession.user?.sessionVersion) {
+          headers.set("x-busbuddy-session-version", String(parsedSession.user.sessionVersion));
         }
       }
     } catch {
@@ -56,6 +61,16 @@ export async function fetchApi<T>(endpoint: string, options?: RequestInit): Prom
         errorMessage = errorPayload.message.join(", ");
       } else if (typeof errorPayload.message === "string") {
         errorMessage = errorPayload.message;
+      }
+
+      if (
+        typeof window !== "undefined" &&
+        response.status === 401 &&
+        typeof errorPayload.message === "string" &&
+        errorPayload.message.toLowerCase().includes("session")
+      ) {
+        window.localStorage.removeItem(SESSION_STORAGE_KEY);
+        window.location.assign("/settings?mode=login");
       }
     } catch {
       // Ignore malformed error responses and keep the default message.

@@ -20,7 +20,7 @@ export function UserAssistantPanel({
   selectedStop: Stop | null;
   selectedRouteIds: string[];
 }) {
-  const { t } = useLanguage();
+  const { locale, t } = useLanguage();
   const [isOpen, setIsOpen] = useState(false);
   const [inputValue, setInputValue] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -68,6 +68,7 @@ export function UserAssistantPanel({
     try {
       const response = await askUserAssistant({
         message: trimmedMessage,
+        locale,
         summary: conversationSummary ?? undefined,
         history: conversationHistory,
         userLocation: userLocation ?? undefined,

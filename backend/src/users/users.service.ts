@@ -152,8 +152,12 @@ export class UsersService {
     return this.sanitizeUser(user);
   }
 
-  async getFavoriteStops(userId: string) {
-    await this.ensureUserExists(userId);
+  async getFavoriteStops(
+    userId: string,
+    actorUserId?: string | null,
+    actorSessionVersion?: string | null,
+  ) {
+    await this.ensureUserAccess(userId, actorUserId, actorSessionVersion);
 
     const favorites = await this.prisma.favoriteStop.findMany({
       where: { userId },
@@ -184,8 +188,16 @@ export class UsersService {
     return favorites.map(({ stop }) => this.toStopResponse(stop));
   }
 
-  async addFavoriteStop(userId: string, stopId: string) {
-    await Promise.all([this.ensureUserExists(userId), this.ensureStopExists(stopId)]);
+  async addFavoriteStop(
+    userId: string,
+    stopId: string,
+    actorUserId?: string | null,
+    actorSessionVersion?: string | null,
+  ) {
+    await Promise.all([
+      this.ensureUserAccess(userId, actorUserId, actorSessionVersion),
+      this.ensureStopExists(stopId),
+    ]);
 
     await this.prisma.favoriteStop.upsert({
       where: {
@@ -229,8 +241,13 @@ export class UsersService {
     return this.toStopResponse(stop);
   }
 
-  async removeFavoriteStop(userId: string, stopId: string) {
-    await this.ensureUserExists(userId);
+  async removeFavoriteStop(
+    userId: string,
+    stopId: string,
+    actorUserId?: string | null,
+    actorSessionVersion?: string | null,
+  ) {
+    await this.ensureUserAccess(userId, actorUserId, actorSessionVersion);
 
     await this.prisma.favoriteStop.deleteMany({
       where: {
@@ -240,8 +257,12 @@ export class UsersService {
     });
   }
 
-  async getNotificationSubscriptions(userId: string) {
-    await this.ensureUserExists(userId);
+  async getNotificationSubscriptions(
+    userId: string,
+    actorUserId?: string | null,
+    actorSessionVersion?: string | null,
+  ) {
+    await this.ensureUserAccess(userId, actorUserId, actorSessionVersion);
 
     const subscriptions = await this.prisma.notificationSubscription.findMany({
       where: {
@@ -272,8 +293,10 @@ export class UsersService {
     userId: string,
     stopId: string,
     routeId: string,
+    actorUserId?: string | null,
+    actorSessionVersion?: string | null,
   ) {
-    await this.ensureUserExists(userId);
+    await this.ensureUserAccess(userId, actorUserId, actorSessionVersion);
 
     const subscription = await this.prisma.notificationSubscription.findFirst({
       where: {
@@ -308,11 +331,21 @@ export class UsersService {
     routeId: string;
     leadTimeMinutes: number;
     isActive?: boolean;
+    actorUserId?: string | null;
+    actorSessionVersion?: string | null;
   }) {
-    const { userId, stopId, routeId, leadTimeMinutes, isActive = true } = input;
+    const {
+      userId,
+      stopId,
+      routeId,
+      leadTimeMinutes,
+      isActive = true,
+      actorUserId,
+      actorSessionVersion,
+    } = input;
 
     await Promise.all([
-      this.ensureUserExists(userId),
+      this.ensureUserAccess(userId, actorUserId, actorSessionVersion),
       this.ensureStopExists(stopId),
       this.ensureRouteExists(routeId),
     ]);
@@ -353,8 +386,13 @@ export class UsersService {
     return this.toNotificationSubscriptionResponse(subscription);
   }
 
-  async removeNotificationSubscription(userId: string, subscriptionId: string) {
-    await this.ensureUserExists(userId);
+  async removeNotificationSubscription(
+    userId: string,
+    subscriptionId: string,
+    actorUserId?: string | null,
+    actorSessionVersion?: string | null,
+  ) {
+    await this.ensureUserAccess(userId, actorUserId, actorSessionVersion);
 
     await this.prisma.notificationSubscription.deleteMany({
       where: {
@@ -368,8 +406,9 @@ export class UsersService {
     userId: string,
     input: { password: string },
     actorUserId?: string | null,
+    actorSessionVersion?: string | null,
   ) {
-    const actor = await resolveRequestActor(this.prisma, actorUserId);
+    const actor = await resolveRequestActor(this.prisma, actorUserId, actorSessionVersion);
 
     if (actor.id !== userId && actor.role !== "ADMIN") {
       throw new ForbiddenException("You cannot change another user's password.");
@@ -396,6 +435,18 @@ export class UsersService {
 
     if (!user) {
       throw new NotFoundException("User not found.");
+    }
+  }
+
+  private async ensureUserAccess(
+    userId: string,
+    actorUserId?: string | null,
+    actorSessionVersion?: string | null,
+  ) {
+    const actor = await resolveRequestActor(this.prisma, actorUserId, actorSessionVersion);
+
+    if (actor.id !== userId && actor.role !== "ADMIN") {
+      throw new ForbiddenException("You cannot access another user's data.");
     }
   }
 

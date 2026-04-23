@@ -7,6 +7,7 @@ export interface UserAssistantMessage {
 
 export interface UserAssistantRequest {
   message: string;
+  locale?: "en" | "th";
   summary?: string;
   history?: UserAssistantMessage[];
   userLocation?: Location;
@@ -16,11 +17,20 @@ export interface UserAssistantRequest {
 
 export interface FleetAssistantRequest {
   message: string;
+  locale?: "en" | "th";
   summary?: string;
   history?: UserAssistantMessage[];
   selectedRouteId?: string;
   selectedBusId?: string;
   activeTab?: "overview" | "alerts" | "vehicles" | "shifts";
+}
+
+export interface AdminAssistantRequest {
+  message: string;
+  locale?: "en" | "th";
+  summary?: string;
+  history?: UserAssistantMessage[];
+  activeSection?: string;
 }
 
 export interface UserAssistantResponse {
@@ -31,3 +41,5 @@ export interface UserAssistantResponse {
 }
 
 export interface FleetAssistantResponse extends UserAssistantResponse {}
+
+export interface AdminAssistantResponse extends UserAssistantResponse {}

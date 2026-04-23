@@ -8,4 +8,8 @@ export class ResetUserPasswordDto {
   @IsBoolean()
   @IsOptional()
   mustResetPassword?: boolean;
+
+  @IsString()
+  @IsOptional()
+  reason?: string;
 }

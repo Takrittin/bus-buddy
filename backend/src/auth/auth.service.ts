@@ -47,7 +47,7 @@ export class AuthService {
       },
     });
 
-    if (!user?.passwordHash) {
+    if (!user?.passwordHash || user.deletedAt) {
       throw new UnauthorizedException('Invalid email or password.');
     }
 

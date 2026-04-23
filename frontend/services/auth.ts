@@ -15,7 +15,9 @@ interface AuthResponse {
     depotName?: string | null;
     isActive?: boolean;
     mustResetPassword?: boolean;
+    sessionVersion?: number;
     lastLoginAt?: string | null;
+    deletedAt?: string | null;
   };
 }
 
@@ -30,7 +32,9 @@ function buildSession(user: AuthResponse["user"]): Session {
       depotName: user.depotName,
       isActive: user.isActive ?? true,
       mustResetPassword: user.mustResetPassword ?? false,
+      sessionVersion: user.sessionVersion ?? 1,
       lastLoginAt: user.lastLoginAt ?? null,
+      deletedAt: user.deletedAt ?? null,
       isGuest: false,
     },
     expires: new Date(Date.now() + SESSION_DURATION_MS).toISOString(),
@@ -65,6 +69,7 @@ export function readStoredSession() {
       user: {
         ...parsedValue.user,
         role: parsedValue.user.role ?? "USER",
+        sessionVersion: parsedValue.user.sessionVersion ?? 1,
       },
     };
   } catch {

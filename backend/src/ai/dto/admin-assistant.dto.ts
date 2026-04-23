@@ -2,7 +2,6 @@ import {
   ArrayMaxSize,
   IsArray,
   IsIn,
-  IsNumber,
   IsOptional,
   IsString,
   MaxLength,
@@ -21,17 +20,7 @@ class ChatMessageDto {
   content!: string;
 }
 
-class UserLocationDto {
-  @Type(() => Number)
-  @IsNumber()
-  lat!: number;
-
-  @Type(() => Number)
-  @IsNumber()
-  lng!: number;
-}
-
-export class UserAssistantDto {
+export class AdminAssistantDto {
   @IsString()
   @MinLength(1)
   @MaxLength(3000)
@@ -47,19 +36,8 @@ export class UserAssistantDto {
   summary?: string;
 
   @IsOptional()
-  @ValidateNested()
-  @Type(() => UserLocationDto)
-  userLocation?: UserLocationDto;
-
-  @IsOptional()
   @IsString()
-  selectedStopId?: string;
-
-  @IsOptional()
-  @IsArray()
-  @ArrayMaxSize(10)
-  @IsString({ each: true })
-  selectedRouteIds?: string[];
+  activeSection?: string;
 
   @IsOptional()
   @IsArray()

@@ -1,5 +1,7 @@
 import { fetchApi } from "@/lib/api-client";
 import {
+  AdminAssistantRequest,
+  AdminAssistantResponse,
   FleetAssistantRequest,
   FleetAssistantResponse,
   UserAssistantRequest,
@@ -15,6 +17,13 @@ export async function askUserAssistant(input: UserAssistantRequest) {
 
 export async function askFleetAssistant(input: FleetAssistantRequest) {
   return fetchApi<FleetAssistantResponse>("/ai/fleet-assistant", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function askAdminAssistant(input: AdminAssistantRequest) {
+  return fetchApi<AdminAssistantResponse>("/ai/admin-assistant", {
     method: "POST",
     body: JSON.stringify(input),
   });
