@@ -36,13 +36,6 @@ import { DriverShift, ShiftStatus } from "@/types/fleet";
 type AlertTone = "red" | "orange" | "blue";
 type AlertSeverity = 1 | 2 | 3 | 4;
 type FleetTab = "overview" | "alerts" | "vehicles" | "shifts";
-type ShiftSortOption =
-  | "start_desc"
-  | "start_asc"
-  | "driver_asc"
-  | "plate_asc"
-  | "route_asc"
-  | "status";
 
 const SHIFT_PAGE_SIZE = 50;
 
@@ -511,9 +504,12 @@ export default function FleetPage() {
   const [isSubmittingShift, setIsSubmittingShift] = useState(false);
   const [shiftActionError, setShiftActionError] = useState<string | null>(null);
   const [shiftActionSuccess, setShiftActionSuccess] = useState<string | null>(null);
-  const [shiftSort, setShiftSort] = useState<ShiftSortOption>("start_desc");
   const [shiftPage, setShiftPage] = useState(1);
+  const [shiftSearchQuery, setShiftSearchQuery] = useState("");
+  const [shiftDateFrom, setShiftDateFrom] = useState("");
+  const [shiftDateTo, setShiftDateTo] = useState("");
   const deferredSearchQuery = useDeferredValue(searchQuery.trim().toLowerCase());
+  const deferredShiftSearchQuery = useDeferredValue(shiftSearchQuery.trim().toLowerCase());
   const STATUS_OPTIONS: Array<{ value: "all" | BusStatus; label: string }> = [
     { value: "all", label: t("fleet.allStatuses") },
     { value: "running", label: t("fleet.running") },
@@ -588,34 +584,57 @@ export default function FleetPage() {
 
   const alerts = useMemo(() => buildFleetAlerts(buses, t), [buses, t]);
   const routeHealth = useMemo(() => buildRouteHealth(routes, buses), [routes, buses]);
-  const sortedShifts = useMemo(() => {
-    const nextShifts = shifts.slice();
+  const filteredShifts = useMemo(() => {
+    return shifts.filter((shift) => {
+      if (deferredShiftSearchQuery) {
+        const searchableFields = [
+          shift.driverName,
+          shift.driverId,
+          shift.busVehicleNumber,
+          shift.busLicensePlate,
+          shift.routeNumber,
+          shift.routeId,
+          shift.notes,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
 
-    nextShifts.sort((left, right) => {
-      switch (shiftSort) {
-        case "start_asc":
-          return new Date(left.shiftStartAt).getTime() - new Date(right.shiftStartAt).getTime();
-        case "driver_asc":
-          return (left.driverName ?? left.driverId).localeCompare(right.driverName ?? right.driverId);
-        case "plate_asc":
-          return (left.busLicensePlate ?? left.busVehicleNumber ?? left.busId).localeCompare(
-            right.busLicensePlate ?? right.busVehicleNumber ?? right.busId,
-          );
-        case "route_asc":
-          return (left.routeNumber ?? left.routeId).localeCompare(right.routeNumber ?? right.routeId);
-        case "status":
-          if (left.status === right.status) {
-            return new Date(right.shiftStartAt).getTime() - new Date(left.shiftStartAt).getTime();
-          }
-          return left.status.localeCompare(right.status);
-        case "start_desc":
-        default:
-          return new Date(right.shiftStartAt).getTime() - new Date(left.shiftStartAt).getTime();
+        if (!searchableFields.includes(deferredShiftSearchQuery)) {
+          return false;
+        }
       }
-    });
 
-    return nextShifts;
-  }, [shiftSort, shifts]);
+      const shiftStartTime = new Date(shift.shiftStartAt).getTime();
+
+      if (shiftDateFrom) {
+        const fromTime = new Date(`${shiftDateFrom}T00:00:00`).getTime();
+        if (shiftStartTime < fromTime) {
+          return false;
+        }
+      }
+
+      if (shiftDateTo) {
+        const toTime = new Date(`${shiftDateTo}T23:59:59`).getTime();
+        if (shiftStartTime > toTime) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }, [deferredShiftSearchQuery, shiftDateFrom, shiftDateTo, shifts]);
+
+  const sortedShifts = useMemo(
+    () =>
+      filteredShifts
+        .slice()
+        .sort(
+          (left, right) =>
+            new Date(right.shiftStartAt).getTime() - new Date(left.shiftStartAt).getTime(),
+        ),
+    [filteredShifts],
+  );
 
   const totalShiftPages = Math.max(1, Math.ceil(sortedShifts.length / SHIFT_PAGE_SIZE));
   const currentShiftPage = Math.min(shiftPage, totalShiftPages);
@@ -727,6 +746,13 @@ export default function FleetPage() {
     setSelectedStatus("all");
     setSelectedDirection("all");
     setSelectedTraffic("all");
+  };
+
+  const clearShiftFilters = () => {
+    setShiftSearchQuery("");
+    setShiftDateFrom("");
+    setShiftDateTo("");
+    setShiftPage(1);
   };
 
   const resetShiftForm = () => {
@@ -1584,30 +1610,74 @@ export default function FleetPage() {
                           <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                             <div className="text-sm text-gray-500">
                               {t("fleet.shiftPageSummary", {
-                                from: (currentShiftPage - 1) * SHIFT_PAGE_SIZE + 1,
+                                from: sortedShifts.length === 0 ? 0 : (currentShiftPage - 1) * SHIFT_PAGE_SIZE + 1,
                                 to: Math.min(currentShiftPage * SHIFT_PAGE_SIZE, sortedShifts.length),
                                 total: sortedShifts.length,
                               })}
                             </div>
-                            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                              <div className="min-w-[220px]">
-                                <FilterSelect
-                                  label={t("fleet.sortShifts")}
-                                  value={shiftSort}
-                                  onChange={(value) => {
-                                    setShiftSort(value as ShiftSortOption);
-                                    setShiftPage(1);
-                                  }}
-                                >
-                                  <option value="start_desc">{t("fleet.sortNewestFirst")}</option>
-                                  <option value="start_asc">{t("fleet.sortOldestFirst")}</option>
-                                  <option value="plate_asc">{t("fleet.sortLicensePlate")}</option>
-                                  <option value="driver_asc">{t("fleet.sortDriverName")}</option>
-                                  <option value="route_asc">{t("fleet.sortRouteNumber")}</option>
-                                  <option value="status">{t("fleet.sortShiftStatus")}</option>
-                                </FilterSelect>
+                            <div className="flex flex-col gap-3">
+                              <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1.3fr_0.8fr_0.8fr_auto]">
+                                <label className="block">
+                                  <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
+                                    {t("fleet.searchShifts")}
+                                  </span>
+                                  <div className="flex items-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-3">
+                                    <Search className="h-4 w-4 text-gray-400" />
+                                    <input
+                                      value={shiftSearchQuery}
+                                      onChange={(event) => {
+                                        setShiftSearchQuery(event.target.value);
+                                        setShiftPage(1);
+                                      }}
+                                      placeholder={t("fleet.searchShiftsPlaceholder")}
+                                      className="w-full border-0 bg-transparent text-sm text-gray-900 outline-none"
+                                    />
+                                  </div>
+                                </label>
+
+                                <label className="block">
+                                  <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
+                                    {t("fleet.shiftDateFrom")}
+                                  </span>
+                                  <input
+                                    type="date"
+                                    value={shiftDateFrom}
+                                    onChange={(event) => {
+                                      setShiftDateFrom(event.target.value);
+                                      setShiftPage(1);
+                                    }}
+                                    className="w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 outline-none transition-colors focus:border-brand"
+                                  />
+                                </label>
+
+                                <label className="block">
+                                  <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
+                                    {t("fleet.shiftDateTo")}
+                                  </span>
+                                  <input
+                                    type="date"
+                                    value={shiftDateTo}
+                                    onChange={(event) => {
+                                      setShiftDateTo(event.target.value);
+                                      setShiftPage(1);
+                                    }}
+                                    className="w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 outline-none transition-colors focus:border-brand"
+                                  />
+                                </label>
+
+                                <div className="flex items-end">
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    onClick={clearShiftFilters}
+                                    className="w-full lg:w-auto"
+                                  >
+                                    {t("fleet.clearShiftFilters")}
+                                  </Button>
+                                </div>
                               </div>
-                              <div className="flex items-center gap-2 self-end">
+
+                            <div className="flex items-center gap-2 self-end">
                                 <Button
                                   type="button"
                                   variant="outline"
