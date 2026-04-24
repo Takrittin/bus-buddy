@@ -20,6 +20,8 @@ import { AdminUserRecord, AuditLogRecord, SystemHealthSnapshot } from "@/types/a
 import { UserRole } from "@/types/auth";
 import { formatUserRole } from "@/lib/auth/roles";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
+import { getAnalyticsDashboard } from "@/services/insights";
+import { AnalyticsDashboard } from "@/types/insights";
 import { Activity, Database, RefreshCw, Shield, UserCog, Users, Wifi } from "lucide-react";
 
 type EditableUser = Record<
@@ -41,6 +43,7 @@ export default function AdminPage() {
   const { user: currentUser, isAuthenticated, isLoading, isAdmin } = useAuth();
   const [users, setUsers] = useState<AdminUserRecord[]>([]);
   const [health, setHealth] = useState<SystemHealthSnapshot | null>(null);
+  const [analytics, setAnalytics] = useState<AnalyticsDashboard | null>(null);
   const [auditLogs, setAuditLogs] = useState<AuditLogRecord[]>([]);
   const [draftUsers, setDraftUsers] = useState<EditableUser>({});
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -66,15 +69,17 @@ export default function AdminPage() {
     setError(null);
 
     try {
-      const [nextUsers, nextHealth, nextLogs] = await Promise.all([
+      const [nextUsers, nextHealth, nextLogs, nextAnalytics] = await Promise.all([
         getAdminUsers(),
         getSystemHealth(),
         getAuditLogs(),
+        getAnalyticsDashboard(),
       ]);
 
       setUsers(nextUsers);
       setHealth(nextHealth);
       setAuditLogs(nextLogs);
+      setAnalytics(nextAnalytics);
       setDraftUsers(
         Object.fromEntries(
           nextUsers.map((user) => [
@@ -352,14 +357,14 @@ export default function AdminPage() {
         <BottomNav />
 
         <main className="flex-1 overflow-y-auto pb-24 md:pb-8 md:pl-20">
-          <div className="mx-auto flex max-w-7xl flex-col gap-6 px-4 py-6 md:px-8">
-            <section className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
+          <div className="mx-auto flex max-w-7xl flex-col gap-4 px-3 py-4 sm:px-4 md:gap-6 md:px-8 md:py-6">
+            <section className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm md:rounded-3xl md:p-6">
               <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                 <div>
                   <p className="text-sm font-semibold uppercase tracking-[0.16em] text-brand">
                     {t("admin.eyebrow")}
                   </p>
-                  <h1 className="mt-2 text-3xl font-bold text-gray-900">{t("admin.title")}</h1>
+                  <h1 className="mt-2 text-2xl font-bold text-gray-900 md:text-3xl">{t("admin.title")}</h1>
                   <p className="mt-2 max-w-3xl text-sm text-gray-500">
                     {t("admin.subtitle")}
                   </p>
@@ -378,7 +383,7 @@ export default function AdminPage() {
               ) : null}
             </section>
 
-            <section className="grid gap-4 md:grid-cols-4">
+            <section className="grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-4">
               <HealthCard
                 icon={Users}
                 title={t("admin.activeUsers")}
@@ -407,14 +412,73 @@ export default function AdminPage() {
               />
             </section>
 
+            {analytics ? (
+              <section className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm md:rounded-3xl md:p-6">
+                <div className="flex items-center gap-3">
+                  <Activity className="h-5 w-5 text-brand" />
+                  <h2 className="text-xl font-bold text-gray-900 md:text-2xl">
+                    {t("admin.analyticsDashboard")}
+                  </h2>
+                </div>
+                <div className="mt-5 grid gap-3 md:grid-cols-4">
+                  <HealthRow
+                    label={t("admin.onTimeRate")}
+                    value={`${analytics.summary.onTimeRate}%`}
+                  />
+                  <HealthRow
+                    label={t("admin.activeBuses")}
+                    value={String(analytics.summary.activeBuses)}
+                  />
+                  <HealthRow
+                    label={t("admin.avgSpeed")}
+                    value={`${analytics.summary.averageSpeedKmh} km/h`}
+                  />
+                  <HealthRow
+                    label={t("admin.fullBuses")}
+                    value={String(analytics.summary.fullBuses)}
+                  />
+                </div>
+                <div className="mt-5 grid gap-4 lg:grid-cols-2">
+                  <div className="rounded-2xl border border-gray-100 p-4">
+                    <h3 className="font-semibold text-gray-900">{t("admin.busiestStops")}</h3>
+                    <div className="mt-3 space-y-2">
+                      {analytics.busiestStops.slice(0, 4).map((stop) => (
+                        <div key={stop.stopId} className="flex items-center justify-between gap-3 text-sm">
+                          <span className="min-w-0 truncate text-gray-700">{stop.stopName}</span>
+                          <span className="shrink-0 font-semibold text-brand">{stop.crowdingScore}%</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="rounded-2xl border border-gray-100 p-4">
+                    <h3 className="font-semibold text-gray-900">{t("admin.routeReliability")}</h3>
+                    <div className="mt-3 space-y-2">
+                      {analytics.routeReliability.slice(0, 4).map((route) => (
+                        <div key={route.routeId} className="flex items-center justify-between gap-3 text-sm">
+                          <span className="min-w-0 truncate text-gray-700">
+                            {t("common.route")} {route.routeNumber}
+                          </span>
+                          <span className="shrink-0 font-semibold text-brand">
+                            {t("admin.reliabilityScore", {
+                              score: route.reliabilityScore,
+                            })}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </section>
+            ) : null}
+
             <section className="grid gap-6">
-              <div className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
+              <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm md:rounded-3xl md:p-6">
                 <div className="flex items-center gap-3">
                   <div className="rounded-2xl bg-orange-100 p-3 text-brand">
                     <UserCog className="h-5 w-5" />
                   </div>
                   <div>
-                    <h2 className="text-2xl font-bold text-gray-900">
+                    <h2 className="text-xl font-bold text-gray-900 md:text-2xl">
                       {t("admin.userManagement")}
                     </h2>
                     <p className="mt-1 text-sm text-gray-500">
@@ -593,9 +657,9 @@ export default function AdminPage() {
                 </div>
               </div>
 
-              <div className="grid gap-6 xl:grid-cols-2">
-                <section className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
-                  <h2 className="text-2xl font-bold text-gray-900">
+              <div className="grid gap-4 md:gap-6 xl:grid-cols-2">
+                <section className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm md:rounded-3xl md:p-6">
+                  <h2 className="text-xl font-bold text-gray-900 md:text-2xl">
                     {t("admin.createFleetManager")}
                   </h2>
                   <p className="mt-2 text-sm text-gray-500">
@@ -661,10 +725,10 @@ export default function AdminPage() {
                   </form>
                 </section>
 
-                <section className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
+                <section className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm md:rounded-3xl md:p-6">
                   <div className="flex items-center gap-3">
                     <Activity className="h-5 w-5 text-brand" />
-                    <h2 className="text-2xl font-bold text-gray-900">
+                    <h2 className="text-xl font-bold text-gray-900 md:text-2xl">
                       {t("admin.systemHealth")}
                     </h2>
                   </div>
@@ -696,8 +760,8 @@ export default function AdminPage() {
               </div>
             </section>
 
-            <section className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
-              <h2 className="text-2xl font-bold text-gray-900">{t("admin.auditLog")}</h2>
+            <section className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm md:rounded-3xl md:p-6">
+              <h2 className="text-xl font-bold text-gray-900 md:text-2xl">{t("admin.auditLog")}</h2>
               <p className="mt-2 text-sm text-gray-500">
                 {t("admin.auditLogSubtitle")}
               </p>
@@ -735,7 +799,7 @@ export default function AdminPage() {
               </div>
 
               <div className="mt-6 overflow-x-auto rounded-2xl border border-gray-100">
-                <table className="min-w-full divide-y divide-gray-100 text-left text-sm">
+                <table className="min-w-[760px] divide-y divide-gray-100 text-left text-sm lg:min-w-full">
                   <thead className="bg-white">
                     <tr className="text-xs uppercase tracking-[0.14em] text-gray-500">
                       <th className="px-3 py-3">{t("admin.when")}</th>
@@ -780,7 +844,7 @@ export default function AdminPage() {
                     total: filteredAuditLogs.length,
                   })}
                 </p>
-                <div className="flex items-center gap-3">
+                <div className="flex flex-wrap items-center gap-2 sm:gap-3">
                   <Button
                     variant="outline"
                     disabled={safeAuditPage <= 1}
@@ -825,14 +889,14 @@ function HealthCard({
   detail: string;
 }) {
   return (
-    <div className="rounded-3xl border border-gray-100 bg-white p-5 shadow-sm">
+    <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm md:rounded-3xl md:p-5">
       <div className="flex items-center gap-3">
         <div className="rounded-2xl bg-orange-100 p-3 text-brand">
           <Icon className="h-5 w-5" />
         </div>
         <div>
           <p className="text-sm text-gray-500">{title}</p>
-          <p className="mt-1 text-2xl font-bold text-gray-900">{value}</p>
+          <p className="mt-1 text-xl font-bold text-gray-900 md:text-2xl">{value}</p>
         </div>
       </div>
       <p className="mt-3 text-sm text-gray-500">{detail}</p>
@@ -852,8 +916,8 @@ function HealthRow({
   return (
     <div className="rounded-2xl border border-gray-100 px-4 py-3">
       <div className="flex items-center justify-between gap-3">
-        <span className="font-medium text-gray-600">{label}</span>
-        <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-gray-700">
+        <span className="min-w-0 break-words font-medium text-gray-600">{label}</span>
+        <span className="shrink-0 rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-gray-700">
           {value}
         </span>
       </div>

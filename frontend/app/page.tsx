@@ -19,7 +19,9 @@ import { StopCardSkeleton } from "@/components/ui/LoadingSkeleton";
 import { useStops } from "@/hooks/useStops";
 import { useLiveBuses } from "@/hooks/useLiveBuses";
 import { useRoutes } from "@/hooks/useRoutes";
+import { getStopCrowding } from "@/services/insights";
 import { Bus, Direction, Location, RouteOverlay, Stop } from "@/types/bus";
+import { StopCrowdingRecord } from "@/types/insights";
 import { LocateFixed } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
@@ -39,6 +41,7 @@ export default function HomePage() {
   const [selectedStop, setSelectedStop] = useState<Stop | null>(null);
   const [selectedBusId, setSelectedBusId] = useState<string | null>(null);
   const [selectedRouteIds, setSelectedRouteIds] = useState<string[]>([]);
+  const [stopCrowding, setStopCrowding] = useState<StopCrowdingRecord[]>([]);
   const { stops, isLoading: isLoadingStops } = useStops(userLocation, NEARBY_STOP_RADIUS_METERS);
   const { buses } = useLiveBuses();
   const { routes } = useRoutes();
@@ -75,6 +78,10 @@ export default function HomePage() {
   const selectedBus = useMemo<Bus | null>(
     () => filteredBuses.find((bus) => bus.id === selectedBusId) ?? null,
     [filteredBuses, selectedBusId],
+  );
+  const stopCrowdingById = useMemo(
+    () => new Map(stopCrowding.map((record) => [record.stopId, record])),
+    [stopCrowding],
   );
 
   const requestCurrentLocation = useCallback(() => {
@@ -120,6 +127,30 @@ export default function HomePage() {
   useEffect(() => {
     requestCurrentLocation();
   }, [requestCurrentLocation]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadInsights() {
+      const crowding = userLocation
+        ? await getStopCrowding({ lat: userLocation.lat, lng: userLocation.lng, radius: 1800 })
+        : await getStopCrowding();
+
+      if (isMounted) {
+        setStopCrowding(crowding);
+      }
+    }
+
+    void loadInsights().catch(() => {
+      if (isMounted) {
+        setStopCrowding([]);
+      }
+    });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [userLocation]);
 
   const toggleRouteFilter = useCallback((routeId: string) => {
     startTransition(() => {
@@ -252,7 +283,7 @@ export default function HomePage() {
         <div className="flex-1 flex flex-col md:flex-row relative w-full h-full md:pl-20">
           
           {/* Map Section */}
-          <div className="w-full h-[45%] md:h-full md:flex-1 relative order-1 md:order-2 z-0">
+          <div className="w-full h-[38%] sm:h-[45%] md:h-full md:flex-1 relative order-1 md:order-2 z-0">
             <MapView 
               center={mapCenter}
               zoom={mapZoom}
@@ -275,8 +306,8 @@ export default function HomePage() {
           </div>
 
           {/* Nearby Stops List Section */}
-          <div className="w-full h-[55%] md:h-full md:w-[400px] lg:w-[450px] flex flex-col bg-white shadow-[0_-10px_20px_-10px_rgba(0,0,0,0.1)] md:shadow-[10px_0_20px_-10px_rgba(0,0,0,0.1)] order-2 md:order-1 z-20 md:z-10 rounded-t-3xl md:rounded-t-none pb-[80px] md:pb-0">
-            <div className="p-4 md:p-6 bg-white border-b border-gray-100 flex-none rounded-t-3xl md:rounded-t-none">
+          <div className="w-full h-[62%] sm:h-[55%] md:h-full md:w-[400px] lg:w-[450px] flex flex-col bg-white shadow-[0_-10px_20px_-10px_rgba(0,0,0,0.1)] md:shadow-[10px_0_20px_-10px_rgba(0,0,0,0.1)] order-2 md:order-1 z-20 md:z-10 rounded-t-3xl md:rounded-t-none pb-[80px] md:pb-0">
+            <div className="p-3 sm:p-4 md:p-6 bg-white border-b border-gray-100 flex-none rounded-t-3xl md:rounded-t-none">
               <div className="w-12 h-1.5 bg-gray-200 rounded-full mx-auto mb-4 md:hidden" />
               <h2 className="text-xl md:text-2xl font-bold text-gray-900 px-2 lg:px-0 mt-2 md:mt-0">{t("home.nearbyStops")}</h2>
               <p className="text-sm text-gray-500 px-2 lg:px-0 mt-1">{t("home.walkingDistance")}</p>
@@ -321,7 +352,7 @@ export default function HomePage() {
               </div>
             </div>
             
-            <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-3">
+            <div className="flex-1 overflow-y-auto p-3 sm:p-4 md:p-6 space-y-3">
                {isResolvingLocation || isLoadingStops ? (
                  <>
                    <StopCardSkeleton />
@@ -335,6 +366,7 @@ export default function HomePage() {
                      key={stop.id} 
                      stop={stop} 
                      isNearest={index === 0 && !isUsingFallbackLocation}
+                     crowding={stopCrowdingById.get(stop.id)}
                      onClick={(stop) => {
                        setSelectedBusId(null);
                        setSelectedStop(stop);
@@ -349,6 +381,7 @@ export default function HomePage() {
           {selectedStop && (
             <StopDetailSheet 
               stop={selectedStop} 
+              crowding={stopCrowdingById.get(selectedStop.id)}
               onClose={() => setSelectedStop(null)} 
             />
           )}

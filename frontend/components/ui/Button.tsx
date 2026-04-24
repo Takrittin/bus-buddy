@@ -20,7 +20,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         ref={ref}
         disabled={isLoading || props.disabled}
         className={cn(
-          "inline-flex items-center justify-center whitespace-nowrap rounded-xl text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:pointer-events-none disabled:opacity-50",
+          "inline-flex items-center justify-center whitespace-normal rounded-xl text-center text-sm font-medium leading-snug transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:pointer-events-none disabled:opacity-50 sm:whitespace-nowrap",
           {
             "bg-brand text-white hover:bg-brand-dark": variant === "primary",
             "bg-orange-100 text-brand-dark hover:bg-orange-200": variant === "secondary",

@@ -31,8 +31,10 @@ import { useLiveBuses } from "@/hooks/useLiveBuses";
 import { useRoutes } from "@/hooks/useRoutes";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { formatUserRole } from "@/lib/auth/roles";
+import { getFleetDispatchBoard } from "@/services/insights";
 import { Bus, BusStatus, Direction, Route, TrafficLevel } from "@/types/bus";
 import { DriverShift, ShiftStatus } from "@/types/fleet";
+import { FleetDispatchRecord } from "@/types/insights";
 
 type AlertTone = "red" | "orange" | "blue";
 type AlertSeverity = 1 | 2 | 3 | 4;
@@ -270,10 +272,10 @@ function FleetStatCard({
   };
 
   return (
-    <div className={`rounded-3xl border p-5 shadow-sm ${tones[tone]}`}>
+    <div className={`rounded-2xl border p-4 shadow-sm md:rounded-3xl md:p-5 ${tones[tone]}`}>
       <div className="flex items-center justify-between">
         <div className="rounded-2xl bg-white/70 p-3">{icon}</div>
-        <p className="text-3xl font-black tracking-tight">{value}</p>
+        <p className="text-2xl font-black tracking-tight md:text-3xl">{value}</p>
       </div>
       <p className="mt-4 text-sm font-semibold uppercase tracking-[0.12em]">{label}</p>
     </div>
@@ -510,6 +512,7 @@ export default function FleetPage() {
   const [shiftSearchQuery, setShiftSearchQuery] = useState("");
   const [shiftDateFrom, setShiftDateFrom] = useState("");
   const [shiftDateTo, setShiftDateTo] = useState("");
+  const [dispatchBoard, setDispatchBoard] = useState<FleetDispatchRecord[]>([]);
   const deferredSearchQuery = useDeferredValue(searchQuery.trim().toLowerCase());
   const deferredShiftSearchQuery = useDeferredValue(shiftSearchQuery.trim().toLowerCase());
   const STATUS_OPTIONS: Array<{ value: "all" | BusStatus; label: string }> = [
@@ -586,6 +589,38 @@ export default function FleetPage() {
 
   const alerts = useMemo(() => buildFleetAlerts(buses, t), [buses, t]);
   const routeHealth = useMemo(() => buildRouteHealth(routes, buses), [routes, buses]);
+
+  useEffect(() => {
+    if (!canUseFleetPage) {
+      return;
+    }
+
+    let isMounted = true;
+
+    async function loadDispatchBoard() {
+      const nextDispatchBoard = await getFleetDispatchBoard();
+
+      if (isMounted) {
+        setDispatchBoard(nextDispatchBoard);
+      }
+    }
+
+    void loadDispatchBoard().catch(() => {
+      if (isMounted) {
+        setDispatchBoard([]);
+      }
+    });
+
+    const intervalId = window.setInterval(() => {
+      void loadDispatchBoard();
+    }, 15000);
+
+    return () => {
+      isMounted = false;
+      window.clearInterval(intervalId);
+    };
+  }, [canUseFleetPage]);
+
   const filteredShifts = useMemo(() => {
     return shifts.filter((shift) => {
       if (deferredShiftSearchQuery) {
@@ -874,21 +909,21 @@ export default function FleetPage() {
         <BottomNav />
 
         <main className="flex-1 w-full overflow-y-auto pb-24 md:pb-8 md:pl-20">
-          <div className="mx-auto flex max-w-7xl flex-col gap-6 px-4 pt-6 md:px-8">
-            <section className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
+          <div className="mx-auto flex max-w-7xl flex-col gap-4 px-3 pt-4 sm:px-4 md:gap-6 md:px-8 md:pt-6">
+            <section className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm md:rounded-3xl md:p-6">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                 <div>
                   <p className="text-sm font-semibold uppercase tracking-[0.16em] text-brand">
                     {t("fleet.operations")}
                   </p>
-                  <h2 className="mt-2 text-3xl font-bold text-gray-900">{t("fleet.title")}</h2>
+                  <h2 className="mt-2 text-2xl font-bold text-gray-900 md:text-3xl">{t("fleet.title")}</h2>
                   <p className="mt-2 max-w-3xl text-sm text-gray-500">
                     {t("fleet.subtitle")}
                   </p>
                 </div>
 
                 {user ? (
-                  <div className="rounded-2xl border border-orange-100 bg-orange-50 px-4 py-3 text-sm text-orange-900">
+                  <div className="rounded-2xl border border-orange-100 bg-orange-50 px-3 py-3 text-sm text-orange-900 md:px-4">
                     {t("fleet.signedInAs")} <span className="font-semibold">{user.name ?? user.email}</span>
                     {" • "}
                     {formatUserRole(user.role, locale)}
@@ -898,11 +933,11 @@ export default function FleetPage() {
             </section>
 
             {isLoading ? (
-              <section className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
+              <section className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm md:rounded-3xl md:p-6">
                 <p className="text-sm text-gray-500">{t("fleet.loading")}</p>
               </section>
             ) : !isAuthenticated ? (
-              <section className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
+              <section className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm md:rounded-3xl md:p-6">
                 <EmptyState
                   icon={<ShieldAlert className="h-16 w-16 mx-auto" />}
                   title={t("fleet.signInTitle")}
@@ -915,7 +950,7 @@ export default function FleetPage() {
                 />
               </section>
             ) : !canUseFleetPage ? (
-              <section className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
+              <section className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm md:rounded-3xl md:p-6">
                 <EmptyState
                   icon={<BusFront className="h-16 w-16 mx-auto" />}
                   title={t("fleet.accessTitle")}
@@ -929,8 +964,8 @@ export default function FleetPage() {
               </section>
             ) : (
               <>
-                <section className="rounded-3xl border border-gray-100 bg-white p-4 shadow-sm">
-                  <div className="flex flex-wrap gap-3">
+                <section className="rounded-2xl border border-gray-100 bg-white p-3 shadow-sm md:rounded-3xl md:p-4">
+                  <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:gap-3">
                     <FleetTabButton
                       label={t("fleet.overview")}
                       value="overview"
@@ -961,7 +996,7 @@ export default function FleetPage() {
                   </div>
                 </section>
 
-                <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+                <section className="grid grid-cols-2 gap-3 md:grid-cols-2 md:gap-4 xl:grid-cols-4">
                   <FleetStatCard
                     icon={<Activity className="h-5 w-5 text-orange-700" />}
                     label={t("fleet.activeBuses")}
@@ -990,7 +1025,68 @@ export default function FleetPage() {
 
                 {activeTab === "overview" ? (
                   <section className="grid grid-cols-1 gap-6 xl:grid-cols-[1.05fr_0.95fr]">
-                    <div className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
+                    <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm md:rounded-3xl md:p-6 xl:col-span-2">
+                      <div>
+                        <h3 className="text-xl font-bold text-gray-900">
+                          {t("fleet.fleetDispatchBoard")}
+                        </h3>
+                        <p className="mt-1 text-sm text-gray-500">
+                          {t("fleet.fleetDispatchSubtitle")}
+                        </p>
+                      </div>
+
+                      <div className="mt-5 grid gap-3 lg:grid-cols-2">
+                        {dispatchBoard.length === 0 ? (
+                          <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-5 text-sm text-emerald-800">
+                            {t("fleet.noDispatchRisks")}
+                          </div>
+                        ) : (
+                          dispatchBoard.slice(0, 4).map((item) => (
+                            <button
+                              key={`${item.routeId}-${item.direction}`}
+                              type="button"
+                              onClick={() => {
+                                setSelectedRouteId(item.routeId);
+                                setActiveTab("vehicles");
+                              }}
+                              className="rounded-2xl border border-gray-100 bg-gray-50 px-4 py-4 text-left transition-transform hover:-translate-y-0.5"
+                            >
+                              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+                                <div className="min-w-0">
+                                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-brand">
+                                    {t("common.route")} {item.routeNumber} •{" "}
+                                    {formatDirection(item.direction, t)}
+                                  </p>
+                                  <p className="mt-1 font-semibold text-gray-900">
+                                    {item.suggestedAction}
+                                  </p>
+                                  <p className="mt-1 text-sm text-gray-500">
+                                    {t("fleet.headwayRisk", {
+                                      minutes: item.headwayRiskMinutes,
+                                    })}{" "}
+                                    • {item.averageDelayMinutes} min delay
+                                  </p>
+                                  {item.suggestedBus ? (
+                                    <p className="mt-2 text-xs font-semibold text-gray-600">
+                                      {t("fleet.suggestedBus", {
+                                        bus:
+                                          item.suggestedBus.licensePlate ??
+                                          item.suggestedBus.vehicleNumber,
+                                      })}
+                                    </p>
+                                  ) : null}
+                                </div>
+                                <span className="w-fit shrink-0 rounded-full bg-orange-100 px-3 py-1 text-xs font-bold text-orange-800">
+                                  {t("fleet.priorityScore", { score: item.priorityScore })}
+                                </span>
+                              </div>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm md:rounded-3xl md:p-6">
                       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                         <div>
                           <h3 className="text-xl font-bold text-gray-900">{t("fleet.routeHealth")}</h3>
@@ -1019,7 +1115,7 @@ export default function FleetPage() {
                                 <p className="mt-1 font-semibold text-gray-900">{route.routeName}</p>
                               </div>
 
-                              <div className="grid grid-cols-3 gap-2 text-center text-sm text-gray-600 md:min-w-[240px]">
+                              <div className="grid grid-cols-1 gap-2 text-center text-sm text-gray-600 sm:grid-cols-3 md:min-w-[240px]">
                                 <div className="rounded-2xl bg-white px-3 py-3">
                                   <p className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-400">
                                     {t("fleet.delay")}
@@ -1051,7 +1147,7 @@ export default function FleetPage() {
                       </div>
                     </div>
 
-                    <div className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
+                    <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm md:rounded-3xl md:p-6">
                       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                         <div>
                           <h3 className="text-xl font-bold text-gray-900">{t("fleet.topAlerts")}</h3>
@@ -1104,7 +1200,7 @@ export default function FleetPage() {
                 ) : null}
 
                 {activeTab === "alerts" ? (
-                  <section className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
+                  <section className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm md:rounded-3xl md:p-6">
                     <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                       <div>
                         <h3 className="text-xl font-bold text-gray-900">{t("fleet.operationsAlerts")}</h3>
@@ -1158,7 +1254,7 @@ export default function FleetPage() {
                 ) : null}
 
                 {activeTab === "vehicles" ? (
-                  <section className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
+                  <section className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm md:rounded-3xl md:p-6">
                   <div className="flex flex-col gap-5">
                     <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
                       <div>
@@ -1360,7 +1456,7 @@ export default function FleetPage() {
 
                 {activeTab === "shifts" ? (
                   <section className="grid grid-cols-1 gap-6 2xl:grid-cols-[0.95fr_1.05fr]">
-                    <div className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
+                    <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm md:rounded-3xl md:p-6">
                       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                         <div>
                           <h3 className="text-xl font-bold text-gray-900">
@@ -1575,7 +1671,7 @@ export default function FleetPage() {
                       )}
                     </div>
 
-                    <div className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
+                    <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm md:rounded-3xl md:p-6">
                       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                         <div>
                           <h3 className="text-xl font-bold text-gray-900">{t("fleet.driverShiftTable")}</h3>
@@ -1656,7 +1752,7 @@ export default function FleetPage() {
                                 </div>
                               </div>
 
-                            <div className="flex items-center gap-2 self-end">
+                            <div className="flex flex-wrap items-center gap-2 self-end">
                                 <Button
                                   type="button"
                                   variant="outline"
@@ -1714,7 +1810,7 @@ export default function FleetPage() {
                             </div>
                           ) : (
                             <div className="overflow-x-auto">
-                              <table className="min-w-full divide-y divide-gray-100 text-sm">
+                              <table className="min-w-[980px] divide-y divide-gray-100 text-sm">
                                 <thead>
                                   <tr className="text-left text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
                                     <th className="px-4 py-3">{t("fleet.driver")}</th>

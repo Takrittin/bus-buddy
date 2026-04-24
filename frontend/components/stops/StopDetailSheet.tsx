@@ -3,7 +3,8 @@
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Stop } from "@/types/bus";
-import { BusFront, Clock, Bell, Heart, Navigation, X } from "lucide-react";
+import { StopCrowdingRecord } from "@/types/insights";
+import { BusFront, Clock, Bell, Heart, Navigation, UsersRound, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Skeleton } from "@/components/ui/LoadingSkeleton";
 import { useETA } from "@/hooks/useETA";
@@ -22,10 +23,42 @@ import { useLanguage } from "@/lib/i18n/LanguageContext";
 
 interface StopDetailSheetProps {
   stop: Stop;
+  crowding?: StopCrowdingRecord;
   onClose: () => void;
 }
 
-export function StopDetailSheet({ stop, onClose }: StopDetailSheetProps) {
+function formatCrowdingLabel(
+  level: StopCrowdingRecord["crowdingLevel"],
+  t: (key: string, vars?: Record<string, string | number>) => string,
+) {
+  switch (level) {
+    case "very_crowded":
+      return t("home.veryCrowded");
+    case "crowded":
+      return t("home.crowded");
+    case "moderate":
+      return t("home.moderateCrowding");
+    case "comfortable":
+    default:
+      return t("home.comfortable");
+  }
+}
+
+function getCrowdingStyle(level: StopCrowdingRecord["crowdingLevel"]) {
+  switch (level) {
+    case "very_crowded":
+      return "border-red-200 bg-red-50 text-red-700";
+    case "crowded":
+      return "border-orange-200 bg-orange-50 text-orange-700";
+    case "moderate":
+      return "border-amber-200 bg-amber-50 text-amber-700";
+    case "comfortable":
+    default:
+      return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  }
+}
+
+export function StopDetailSheet({ stop, crowding, onClose }: StopDetailSheetProps) {
   const { t, locale } = useLanguage();
   const { etas, isLoading, error } = useETA(stop.id);
   const router = useRouter();
@@ -181,6 +214,17 @@ export function StopDetailSheet({ stop, onClose }: StopDetailSheetProps) {
           <div className="min-w-0">
             <div className="flex items-start gap-3">
               <h2 className="text-2xl font-bold text-gray-900 leading-tight">{stop.name}</h2>
+              {crowding ? (
+                <div
+                  className={`mt-1 hidden shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold sm:inline-flex ${getCrowdingStyle(
+                    crowding.crowdingLevel,
+                  )}`}
+                  title={t("home.crowdingScore", { score: crowding.crowdingScore })}
+                >
+                  <UsersRound className="h-3.5 w-3.5" />
+                  <span>{formatCrowdingLabel(crowding.crowdingLevel, t)}</span>
+                </div>
+              ) : null}
               <Button
                 type="button"
                 variant="ghost"
@@ -196,6 +240,17 @@ export function StopDetailSheet({ stop, onClose }: StopDetailSheetProps) {
             <p className="text-sm text-brand font-medium mt-1">
               {stop.landmark ?? t("stop.liveArrivals")}
             </p>
+            {crowding ? (
+              <div
+                className={`mt-2 inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold sm:hidden ${getCrowdingStyle(
+                  crowding.crowdingLevel,
+                )}`}
+              >
+                <UsersRound className="h-3.5 w-3.5" />
+                <span>{formatCrowdingLabel(crowding.crowdingLevel, t)}</span>
+                <span className="text-current/70">{crowding.crowdingScore}%</span>
+              </div>
+            ) : null}
             {stop.areaDescription && (
               <p className="text-xs text-gray-500 mt-2 max-w-[260px] leading-5">
                 {stop.areaDescription}

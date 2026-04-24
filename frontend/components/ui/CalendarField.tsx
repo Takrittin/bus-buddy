@@ -219,7 +219,7 @@ export function CalendarField({
       </button>
 
       {isOpen ? (
-        <div className="absolute left-0 top-[calc(100%+10px)] z-30 w-full min-w-[320px] rounded-3xl border border-orange-100 bg-white p-4 shadow-2xl shadow-orange-100">
+        <div className="absolute left-0 top-[calc(100%+10px)] z-30 w-[min(320px,calc(100vw-2rem))] rounded-3xl border border-orange-100 bg-white p-4 shadow-2xl shadow-orange-100 sm:w-full sm:min-w-[320px]">
           <div className="flex items-center justify-between gap-3">
             <button
               type="button"
