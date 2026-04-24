@@ -11,17 +11,39 @@ export interface CompactInsightStop {
 
 export interface TripPlanOption {
   planId: string;
+  journeyType: "direct" | "transfer";
   routeId: string;
   routeNumber: string;
   routeName: string;
   direction: Direction;
   boardingStop: CompactInsightStop;
   alightingStop: CompactInsightStop;
+  transferStop?: CompactInsightStop;
   walkToStopMinutes: number;
   waitMinutes: number;
   rideMinutes: number;
+  transferWaitMinutes: number;
   walkFromStopMinutes: number;
   totalMinutes: number;
+  legs: TripPlanLeg[];
+  nextBus?: {
+    busId: string;
+    licensePlate?: string;
+    minutes: number;
+    occupancyLevel?: OccupancyLevel;
+    trafficLevel?: TrafficLevel;
+  } | null;
+}
+
+export interface TripPlanLeg {
+  routeId: string;
+  routeNumber: string;
+  routeName: string;
+  direction: Direction;
+  boardingStop: CompactInsightStop;
+  alightingStop: CompactInsightStop;
+  waitMinutes: number;
+  rideMinutes: number;
   nextBus?: {
     busId: string;
     licensePlate?: string;

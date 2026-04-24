@@ -280,7 +280,7 @@ export default function HomePage() {
         <BottomNav />
         
         {/* Main Content Layout */}
-        <div className="flex-1 flex flex-col md:flex-row relative w-full h-full md:pl-20">
+        <div className="flex-1 flex flex-col md:flex-row relative w-full h-full md:pl-24">
           
           {/* Map Section */}
           <div className="w-full h-[38%] sm:h-[45%] md:h-full md:flex-1 relative order-1 md:order-2 z-0">

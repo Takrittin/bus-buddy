@@ -6,6 +6,7 @@ import {
 import { FunctionDeclaration, GoogleGenAI } from '@google/genai';
 import { requireAdminActor } from '../common/request-actor';
 import { FleetService } from '../fleet/fleet.service';
+import { InsightsService } from '../insights/insights.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { SimulationGateway } from '../simulation/simulation.gateway';
 import { TransitPersistenceService } from '../transit/transit-persistence.service';
@@ -30,7 +31,14 @@ type AssistantResponsePayload = {
   model: string;
   summary: string;
 };
-type UserAssistantIntent = 'nearby' | 'stop' | 'route' | 'live_buses' | 'eta' | 'general';
+type UserAssistantIntent =
+  | 'nearby'
+  | 'stop'
+  | 'route'
+  | 'trip_planner'
+  | 'live_buses'
+  | 'eta'
+  | 'general';
 type FleetAssistantIntent = 'overview' | 'route_health' | 'buses' | 'shifts' | 'assignment' | 'general';
 type AdminAssistantIntent = 'users' | 'health' | 'audit' | 'general';
 type AutoToolCall = { name: string; args: Record<string, unknown> };
@@ -42,6 +50,30 @@ const MAX_TOOL_LOOPS = 3;
 const MAX_VERIFIED_TOOL_RESULT_CHARS = 1600;
 const SMALL_TALK_PATTERN =
   /^(hi|hello|hey|thanks|thank you|ok|okay|สวัสดี|หวัดดี|ขอบคุณ|โอเค|ครับ|ค่ะ|คับ|จ้า)[!.?\s]*$/i;
+const USER_TRIP_QUESTION_PATTERN =
+  /(how\s*(do|can)\s*i\s*get|directions?|go\s*to|travel\s*to|ไป.*(ยังไง|อย่างไร|ทางไหน|ได้ไหม|ได้มั้ย)|ไปที่|อยากไป|เดินทางไป|จาก.+ไป)/i;
+const THAI_STOP_ALIASES: Record<string, string[]> = {
+  stop_bang_kapi: ['บางกะปิ', 'เดอะมอลล์บางกะปิ', 'มอลล์บางกะปิ'],
+  stop_siam: ['สยาม', 'siam paragon', 'พารากอน'],
+  stop_victory_monument: ['อนุสาวรีย์ชัย', 'อนุสาวรีย์ชัยสมรภูมิ'],
+  stop_mochit_bus_terminal: ['หมอชิต', 'ขนส่งหมอชิต'],
+  stop_chatuchak_park: ['จตุจักร', 'สวนจตุจักร', 'mrt จตุจักร'],
+  stop_hua_lamphong: ['หัวลำโพง'],
+  stop_ratchathewi: ['ราชเทวี'],
+  stop_pratunam: ['ประตูน้ำ'],
+  stop_on_nut: ['อ่อนนุช'],
+  stop_ekkamai: ['เอกมัย'],
+  stop_lat_phrao: ['ลาดพร้าว'],
+  stop_wongwian_yai: ['วงเวียนใหญ่'],
+  stop_bang_na: ['บางนา'],
+  stop_pak_nam: ['ปากน้ำ'],
+  stop_don_mueang_airport: ['ดอนเมือง', 'สนามบินดอนเมือง'],
+  stop_suvarnabhumi_airport: ['สุวรรณภูมิ', 'สนามบินสุวรรณภูมิ'],
+  stop_thammasat_rangsit: ['ธรรมศาสตร์รังสิต', 'มธ รังสิต'],
+  stop_rangsit_market: ['รังสิต', 'ตลาดรังสิต'],
+  stop_fashion_island: ['แฟชั่นไอส์แลนด์'],
+  stop_minburi_market: ['มีนบุรี', 'ตลาดมีนบุรี'],
+};
 
 @Injectable()
 export class AiService {
@@ -50,6 +82,7 @@ export class AiService {
   constructor(
     private readonly transitState: TransitStateService,
     private readonly fleetService: FleetService,
+    private readonly insightsService: InsightsService,
     private readonly prisma: PrismaService,
     private readonly transitPersistence: TransitPersistenceService,
     private readonly simulationGateway: SimulationGateway,
@@ -68,6 +101,12 @@ export class AiService {
   }
 
   async replyToUserAssistant(userAssistantDto: UserAssistantDto) {
+    const deterministicTripReply = this.tryReplyWithBackendTripPlanner(userAssistantDto);
+
+    if (deterministicTripReply) {
+      return deterministicTripReply;
+    }
+
     const baseTools = this.getUserTools();
     const intent = this.routeUserIntent(userAssistantDto);
     const tools = this.pickTools(
@@ -450,6 +489,10 @@ export class AiService {
   private routeUserIntent(userAssistantDto: UserAssistantDto): UserAssistantIntent {
     const text = this.intentText(userAssistantDto.message, userAssistantDto.summary);
 
+    if (USER_TRIP_QUESTION_PATTERN.test(text)) {
+      return 'trip_planner';
+    }
+
     if (/(eta|arriv|arrival|กี่นาที|อีกกี่|ถึงเมื่อ|รถมา|รอรถ)/i.test(text)) {
       return 'eta';
     }
@@ -488,6 +531,9 @@ export class AiService {
     const toolsByIntent: Record<UserAssistantIntent, string[]> = {
       nearby: ['get_nearby_stops'],
       stop: ['get_stop_details', 'get_eta_for_stop'],
+      trip_planner: userAssistantDto.userLocation
+        ? ['get_nearby_stops', 'search_routes']
+        : ['search_routes'],
       route: [...routeScopedTools, 'get_live_buses'],
       live_buses: ['get_live_buses', 'get_route_details'],
       eta: userAssistantDto.selectedStopId
@@ -536,6 +582,13 @@ export class AiService {
       } else if (routeQuery) {
         calls.push({ name: 'search_routes', args: { query: routeQuery } });
       }
+    }
+
+    if (intent === 'trip_planner' && userAssistantDto.userLocation) {
+      calls.push({
+        name: 'get_nearby_stops',
+        args: { ...userAssistantDto.userLocation, radius: 1200 },
+      });
     }
 
     if (intent === 'live_buses') {
@@ -801,6 +854,295 @@ export class AiService {
 
   private shouldAvoidUnverifiedAnswer(message: string) {
     return !SMALL_TALK_PATTERN.test(message.trim());
+  }
+
+  private tryReplyWithBackendTripPlanner(
+    userAssistantDto: UserAssistantDto,
+  ): AssistantResponsePayload | null {
+    const tripRequest = this.resolveBackendTripPlannerRequest(userAssistantDto);
+
+    if (!tripRequest.isTripIntent) {
+      return null;
+    }
+
+    if (!tripRequest.destinationStop) {
+      const message =
+        userAssistantDto.locale === 'th'
+          ? 'อยากไปที่ไหนครับ พิมพ์ชื่อปลายทางหรือเลือกป้ายปลายทาง เช่น “ไปบางกะปิยังไง”'
+          : 'Where would you like to go? Type a destination stop or place, for example “How do I get to Bang Kapi?”';
+
+      return this.buildDeterministicUserReply(userAssistantDto, message, []);
+    }
+
+    if (!tripRequest.origin) {
+      const message =
+        userAssistantDto.locale === 'th'
+          ? 'ผมยังไม่มีต้นทางครับ เปิดตำแหน่งปัจจุบัน หรือถามแบบ “จากสยามไปบางกะปิยังไง” ได้เลย'
+          : 'I need an origin first. Enable current location or ask like “How do I get from Siam to Bang Kapi?”';
+
+      return this.buildDeterministicUserReply(userAssistantDto, message, []);
+    }
+
+    const plan = this.insightsService.planTrip({
+      originLat: tripRequest.origin.lat,
+      originLng: tripRequest.origin.lng,
+      destinationLat: Number(tripRequest.destinationStop.latitude),
+      destinationLng: Number(tripRequest.destinationStop.longitude),
+    });
+    const message = this.formatBackendTripPlannerReply(
+      userAssistantDto.locale,
+      tripRequest.originLabel,
+      tripRequest.destinationStop.stop_name,
+      plan,
+    );
+
+    return this.buildDeterministicUserReply(userAssistantDto, message, [
+      'backend_trip_planner',
+    ]);
+  }
+
+  private buildDeterministicUserReply(
+    userAssistantDto: UserAssistantDto,
+    message: string,
+    toolCalls: string[],
+  ): AssistantResponsePayload {
+    return {
+      message,
+      tool_calls: toolCalls,
+      model: 'busbuddy-backend-router',
+      summary: this.buildRollingSummary(
+        userAssistantDto.summary,
+        userAssistantDto.message,
+        message,
+        toolCalls,
+      ),
+    };
+  }
+
+  private resolveBackendTripPlannerRequest(userAssistantDto: UserAssistantDto) {
+    const mentions = this.findStopMentions(userAssistantDto.message);
+    const isTripIntent =
+      USER_TRIP_QUESTION_PATTERN.test(userAssistantDto.message) ||
+      (mentions.length > 0 && /(ไป|จาก|to|from|direction|route|ยังไง|อย่างไร)/i.test(userAssistantDto.message));
+
+    if (!isTripIntent) {
+      return { isTripIntent: false as const };
+    }
+
+    const explicitOrigin = this.pickStopMentionAfterKeywords(mentions, userAssistantDto.message, [
+      'จาก',
+      'from',
+    ]);
+    const destinationStop =
+      this.pickStopMentionAfterKeywords(
+        mentions,
+        userAssistantDto.message,
+        ['ไป', 'to', 'go to', 'travel to'],
+        explicitOrigin?.stop.stop_id,
+      )?.stop ??
+      mentions.find((mention) => mention.stop.stop_id !== explicitOrigin?.stop.stop_id)?.stop ??
+      mentions[0]?.stop;
+    const selectedStop = userAssistantDto.selectedStopId
+      ? this.findStopById(userAssistantDto.selectedStopId)
+      : null;
+    const originStop = explicitOrigin?.stop ?? selectedStop;
+
+    if (explicitOrigin?.stop) {
+      return {
+        isTripIntent: true as const,
+        destinationStop,
+        origin: {
+          lat: Number(explicitOrigin.stop.latitude),
+          lng: Number(explicitOrigin.stop.longitude),
+        },
+        originLabel: explicitOrigin.stop.stop_name,
+      };
+    }
+
+    if (userAssistantDto.userLocation) {
+      return {
+        isTripIntent: true as const,
+        destinationStop,
+        origin: userAssistantDto.userLocation,
+        originLabel: userAssistantDto.locale === 'th' ? 'ตำแหน่งปัจจุบัน' : 'your current location',
+      };
+    }
+
+    if (originStop) {
+      return {
+        isTripIntent: true as const,
+        destinationStop,
+        origin: {
+          lat: Number(originStop.latitude),
+          lng: Number(originStop.longitude),
+        },
+        originLabel: originStop.stop_name,
+      };
+    }
+
+    return {
+      isTripIntent: true as const,
+      destinationStop,
+      origin: null,
+      originLabel: '',
+    };
+  }
+
+  private findStopMentions(message: string) {
+    const normalizedMessage = this.normalizeSearchText(message);
+    const compactMessage = normalizedMessage.replace(/\s+/g, '');
+    const mentions = new Map<
+      string,
+      {
+        stop: ReturnType<TransitStateService['getStops']>[number];
+        index: number;
+        aliasLength: number;
+      }
+    >();
+
+    for (const stop of this.transitState.getStops()) {
+      const aliases = [
+        stop.stop_name,
+        stop.landmark,
+        stop.area_description,
+        ...(THAI_STOP_ALIASES[stop.stop_id] ?? []),
+      ]
+        .filter(Boolean)
+        .map((alias) => this.normalizeSearchText(String(alias)))
+        .filter((alias) => alias.length >= 3);
+
+      for (const alias of aliases) {
+        const compactAlias = alias.replace(/\s+/g, '');
+        let index = normalizedMessage.indexOf(alias);
+
+        if (index < 0 && compactAlias.length >= 3) {
+          index = compactMessage.indexOf(compactAlias);
+        }
+
+        if (index < 0) {
+          continue;
+        }
+
+        const current = mentions.get(stop.stop_id);
+
+        if (!current || alias.length > current.aliasLength || index < current.index) {
+          mentions.set(stop.stop_id, {
+            stop,
+            index,
+            aliasLength: alias.length,
+          });
+        }
+      }
+    }
+
+    return Array.from(mentions.values()).sort((left, right) => {
+      if (left.index === right.index) {
+        return right.aliasLength - left.aliasLength;
+      }
+
+      return left.index - right.index;
+    });
+  }
+
+  private pickStopMentionAfterKeywords(
+    mentions: ReturnType<AiService['findStopMentions']>,
+    message: string,
+    keywords: string[],
+    excludedStopId?: string,
+  ) {
+    const normalizedMessage = this.normalizeSearchText(message);
+    const keywordIndexes = keywords
+      .map((keyword) => normalizedMessage.indexOf(this.normalizeSearchText(keyword)))
+      .filter((index) => index >= 0);
+
+    if (!keywordIndexes.length) {
+      return null;
+    }
+
+    return (
+      mentions
+        .filter((mention) => mention.stop.stop_id !== excludedStopId)
+        .flatMap((mention) =>
+          keywordIndexes
+            .filter((keywordIndex) => mention.index > keywordIndex)
+            .map((keywordIndex) => ({
+              mention,
+              distance: mention.index - keywordIndex,
+            })),
+        )
+        .sort((left, right) => left.distance - right.distance)[0]?.mention ?? null
+    );
+  }
+
+  private findStopById(stopId: string) {
+    try {
+      return this.transitState.getStop(stopId);
+    } catch {
+      return null;
+    }
+  }
+
+  private normalizeSearchText(value: string) {
+    return value
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}]+/gu, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  private formatBackendTripPlannerReply(
+    locale: 'en' | 'th' | undefined,
+    originLabel: string,
+    destinationName: string,
+    plan: ReturnType<InsightsService['planTrip']>,
+  ) {
+    const topPlans = plan.plans.slice(0, 2);
+
+    if (topPlans.length === 0) {
+      return locale === 'th'
+        ? `ยังหาเส้นทางจาก ${originLabel} ไป ${destinationName} จากข้อมูล BusBuddy ไม่เจอครับ ลองเลือกต้นทาง/ปลายทางที่ใกล้ป้ายรถเมล์กว่าเดิม`
+        : `I could not find a BusBuddy route from ${originLabel} to ${destinationName}. Try an origin or destination closer to a bus stop.`;
+    }
+
+    if (locale === 'th') {
+      const lines = topPlans.map((tripPlan, index) => {
+        const transferStop = this.getTripPlanTransferStop(tripPlan);
+        const transferText = transferStop
+          ? ` ต่อที่ ${transferStop.stop_name}`
+          : '';
+
+        return `${index + 1}. สาย ${tripPlan.route_number}: ขึ้นที่ ${tripPlan.boarding_stop.stop_name}${transferText} ลงที่ ${tripPlan.alighting_stop.stop_name} รวมประมาณ ${tripPlan.total_minutes} นาที`;
+      });
+
+      return [
+        `จาก ${originLabel} ไป ${destinationName} แนะนำ:`,
+        ...lines,
+        'เวลาเป็น estimate จาก BusBuddy backend, live ETA และ traffic mock ไม่ใช่เวลาจาก map routing จริงครับ',
+      ].join('\n');
+    }
+
+    const lines = topPlans.map((tripPlan, index) => {
+      const transferStop = this.getTripPlanTransferStop(tripPlan);
+      const transferText = transferStop
+        ? `, transfer at ${transferStop.stop_name}`
+        : '';
+
+      return `${index + 1}. Route ${tripPlan.route_number}: board at ${tripPlan.boarding_stop.stop_name}${transferText}, get off at ${tripPlan.alighting_stop.stop_name}. About ${tripPlan.total_minutes} min total.`;
+    });
+
+    return [
+      `From ${originLabel} to ${destinationName}, BusBuddy suggests:`,
+      ...lines,
+      'Times are estimated from BusBuddy backend live ETA and traffic mock data, not external map routing.',
+    ].join('\n');
+  }
+
+  private getTripPlanTransferStop(
+    tripPlan: ReturnType<InsightsService['planTrip']>['plans'][number],
+  ): { stop_name: string } | undefined {
+    return 'transfer_stop' in tripPlan
+      ? (tripPlan.transfer_stop as { stop_name: string } | undefined)
+      : undefined;
   }
 
   private toCompactEtaPrediction(prediction: Record<string, unknown>) {

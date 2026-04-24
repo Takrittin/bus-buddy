@@ -908,7 +908,7 @@ export default function FleetPage() {
       <div className="flex flex-1 pt-[60px]">
         <BottomNav />
 
-        <main className="flex-1 w-full overflow-y-auto pb-24 md:pb-8 md:pl-20">
+        <main className="flex-1 w-full overflow-y-auto pb-24 md:pb-8 md:pl-24">
           <div className="mx-auto flex max-w-7xl flex-col gap-4 px-3 pt-4 sm:px-4 md:gap-6 md:px-8 md:pt-6">
             <section className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm md:rounded-3xl md:p-6">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">

@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { TransitStateService } from '../transit/transit-state.service';
 import { DirectionId, OccupancyLevel, TrafficLevel } from '../transit/transit.types';
+import { distanceInMeters, minutesFromDistance, remainingDistance } from '../transit/geo.utils';
 
 type LocationInput = { lat: number; lng: number };
 
@@ -26,6 +27,10 @@ type BusLike = ReturnType<TransitStateService['getLiveBuses']>[number];
 type RouteLike = ReturnType<TransitStateService['getRoutes']>[number];
 
 const WALKING_SPEED_METERS_PER_MINUTE = 75;
+const TRANSFER_BUFFER_MINUTES = 4;
+const MAX_TRANSFER_WALK_METERS = 450;
+const DEFAULT_DWELL_MINUTES_PER_STOP = 0.6;
+const BUS_TRIP_TIME_BUFFER = 1.18;
 
 @Injectable()
 export class InsightsService {
@@ -39,10 +44,16 @@ export class InsightsService {
       .getNearbyStops(destination.lat, destination.lng, 1800)
       .slice(0, 8);
     const routes = this.transitState.getRoutes();
+    const allStops = this.transitState.getStops();
 
-    const plans = originStops.flatMap((boardingStop) =>
+    const directPlans = originStops.flatMap((boardingStop) =>
       destinationStops.flatMap((alightingStop) =>
         this.buildDirectPlans(boardingStop, alightingStop, routes),
+      ),
+    );
+    const transferPlans = originStops.flatMap((boardingStop) =>
+      destinationStops.flatMap((alightingStop) =>
+        this.buildTransferPlans(boardingStop, alightingStop, allStops, routes),
       ),
     );
 
@@ -50,9 +61,9 @@ export class InsightsService {
       origin,
       destination,
       generated_at: new Date().toISOString(),
-      plans: plans
+      plans: this.dedupePlans([...directPlans, ...transferPlans])
         .sort((left, right) => left.total_minutes - right.total_minutes)
-        .slice(0, 5),
+        .slice(0, 8),
       fallback_stops: {
         origin: originStops.slice(0, 3).map((stop) => this.toCompactStop(stop)),
         destination: destinationStops.slice(0, 3).map((stop) => this.toCompactStop(stop)),
@@ -301,20 +312,23 @@ export class InsightsService {
       }
 
       const route = routes.find((candidate) => candidate.route_id === boardingAssignment.route_id);
-      const eta = this.transitState
-        .getEtaPredictions(boardingStop.stop_id)
-        .find(
-          (prediction) =>
-            prediction.route_id === boardingAssignment.route_id &&
-            prediction.direction === boardingAssignment.direction,
-        );
+      const eta = this.findEta(boardingStop, boardingAssignment);
       const walkToStopMinutes = Math.ceil((boardingStop.distance_meters ?? 0) / WALKING_SPEED_METERS_PER_MINUTE);
       const walkFromStopMinutes = Math.ceil((alightingStop.distance_meters ?? 0) / WALKING_SPEED_METERS_PER_MINUTE);
-      const rideMinutes = Math.max(4, (alightingAssignment.sequence - boardingAssignment.sequence) * 3);
+      const rideMinutes = this.estimateRideMinutes(route, boardingAssignment, alightingAssignment);
       const waitMinutes = eta?.minutes ?? route?.average_headway_minutes ?? 12;
+      const firstLeg = this.buildTripLeg(
+        boardingAssignment,
+        boardingStop,
+        alightingStop,
+        waitMinutes,
+        rideMinutes,
+        eta,
+      );
 
       plans.push({
         plan_id: `${boardingStop.stop_id}-${alightingStop.stop_id}-${boardingAssignment.route_id}-${boardingAssignment.direction}`,
+        journey_type: 'direct',
         route_id: boardingAssignment.route_id,
         route_number: boardingAssignment.route_number,
         route_name: boardingAssignment.route_name,
@@ -324,8 +338,10 @@ export class InsightsService {
         walk_to_stop_minutes: walkToStopMinutes,
         wait_minutes: waitMinutes,
         ride_minutes: rideMinutes,
+        transfer_wait_minutes: 0,
         walk_from_stop_minutes: walkFromStopMinutes,
         total_minutes: walkToStopMinutes + waitMinutes + rideMinutes + walkFromStopMinutes,
+        legs: [firstLeg],
         next_bus: eta
           ? {
               bus_id: eta.bus_id,
@@ -339,6 +355,245 @@ export class InsightsService {
     }
 
     return plans;
+  }
+
+  private buildTransferPlans(
+    boardingStop: StopLike,
+    alightingStop: StopLike,
+    allStops: StopLike[],
+    routes: RouteLike[],
+  ) {
+    const plans = [];
+
+    for (const boardingAssignment of boardingStop.route_assignments ?? []) {
+      const firstRoute = routes.find((candidate) => candidate.route_id === boardingAssignment.route_id);
+
+      for (const alightingAssignment of alightingStop.route_assignments ?? []) {
+        if (boardingAssignment.route_id === alightingAssignment.route_id) {
+          continue;
+        }
+
+        const secondRoute = routes.find((candidate) => candidate.route_id === alightingAssignment.route_id);
+        const firstTransferCandidates = allStops
+          .filter(
+            (stop) =>
+              stop.stop_id !== boardingStop.stop_id &&
+              stop.stop_id !== alightingStop.stop_id &&
+              stop.route_ids?.includes(boardingAssignment.route_id),
+          )
+          .sort((left, right) => {
+            const leftPriority = (left.is_interchange ? 2 : 0) + (left.is_major_stop ? 1 : 0);
+            const rightPriority = (right.is_interchange ? 2 : 0) + (right.is_major_stop ? 1 : 0);
+
+            return rightPriority - leftPriority;
+          })
+          .slice(0, 40);
+
+        const secondTransferCandidates = allStops
+          .filter(
+            (stop) =>
+              stop.stop_id !== boardingStop.stop_id &&
+              stop.stop_id !== alightingStop.stop_id &&
+              stop.route_ids?.includes(alightingAssignment.route_id),
+          )
+          .slice(0, 80);
+
+        for (const transferStop of firstTransferCandidates) {
+          const firstTransferAssignment = (transferStop.route_assignments ?? []).find(
+            (assignment) =>
+              assignment.route_id === boardingAssignment.route_id &&
+              assignment.direction === boardingAssignment.direction &&
+              assignment.sequence > boardingAssignment.sequence,
+          );
+
+          if (!firstTransferAssignment) {
+            continue;
+          }
+
+          const nearbySecondTransferStops = secondTransferCandidates
+            .map((candidate) => ({
+              stop: candidate,
+              walkMeters: Math.round(
+                distanceInMeters(
+                  { lat: transferStop.latitude, lng: transferStop.longitude },
+                  { lat: candidate.latitude, lng: candidate.longitude },
+                ),
+              ),
+            }))
+            .filter((candidate) => candidate.walkMeters <= MAX_TRANSFER_WALK_METERS)
+            .sort((left, right) => left.walkMeters - right.walkMeters)
+            .slice(0, 5);
+
+          for (const secondTransfer of nearbySecondTransferStops) {
+            const secondTransferAssignment = (secondTransfer.stop.route_assignments ?? []).find(
+              (assignment) =>
+                assignment.route_id === alightingAssignment.route_id &&
+                assignment.direction === alightingAssignment.direction &&
+                assignment.sequence < alightingAssignment.sequence,
+            );
+
+            if (!secondTransferAssignment) {
+              continue;
+            }
+
+            const firstEta = this.findEta(boardingStop, boardingAssignment);
+            const secondEta = this.findEta(secondTransfer.stop, secondTransferAssignment);
+            const walkToStopMinutes = Math.ceil((boardingStop.distance_meters ?? 0) / WALKING_SPEED_METERS_PER_MINUTE);
+            const walkFromStopMinutes = Math.ceil((alightingStop.distance_meters ?? 0) / WALKING_SPEED_METERS_PER_MINUTE);
+            const transferWalkMinutes = Math.ceil(secondTransfer.walkMeters / WALKING_SPEED_METERS_PER_MINUTE);
+            const firstRideMinutes = this.estimateRideMinutes(firstRoute, boardingAssignment, firstTransferAssignment);
+            const secondRideMinutes = this.estimateRideMinutes(secondRoute, secondTransferAssignment, alightingAssignment);
+            const firstWaitMinutes = firstEta?.minutes ?? firstRoute?.average_headway_minutes ?? 12;
+            const secondWaitMinutes = secondEta?.minutes ?? secondRoute?.average_headway_minutes ?? 12;
+            const transferWaitMinutes = secondWaitMinutes + transferWalkMinutes + TRANSFER_BUFFER_MINUTES;
+            const totalMinutes =
+              walkToStopMinutes +
+              firstWaitMinutes +
+              firstRideMinutes +
+              transferWaitMinutes +
+              secondRideMinutes +
+              walkFromStopMinutes;
+
+            plans.push({
+              plan_id: `${boardingStop.stop_id}-${transferStop.stop_id}-${secondTransfer.stop.stop_id}-${alightingStop.stop_id}-${boardingAssignment.route_id}-${alightingAssignment.route_id}-${boardingAssignment.direction}-${alightingAssignment.direction}`,
+              journey_type: 'transfer',
+              route_id: `${boardingAssignment.route_id}+${alightingAssignment.route_id}`,
+              route_number: `${boardingAssignment.route_number} + ${alightingAssignment.route_number}`,
+              route_name: `${boardingAssignment.route_name} → ${alightingAssignment.route_name}`,
+              direction: boardingAssignment.direction,
+              boarding_stop: this.toCompactStop(boardingStop),
+              alighting_stop: this.toCompactStop(alightingStop),
+              transfer_stop: this.toCompactStop(secondTransfer.walkMeters <= 80 ? transferStop : secondTransfer.stop),
+              walk_to_stop_minutes: walkToStopMinutes,
+              wait_minutes: firstWaitMinutes,
+              ride_minutes: firstRideMinutes + secondRideMinutes,
+              transfer_wait_minutes: transferWaitMinutes,
+              walk_from_stop_minutes: walkFromStopMinutes,
+              total_minutes: totalMinutes,
+              legs: [
+                this.buildTripLeg(
+                  boardingAssignment,
+                  boardingStop,
+                  transferStop,
+                  firstWaitMinutes,
+                  firstRideMinutes,
+                  firstEta,
+                ),
+                this.buildTripLeg(
+                  secondTransferAssignment,
+                  secondTransfer.stop,
+                  alightingStop,
+                  transferWaitMinutes,
+                  secondRideMinutes,
+                  secondEta,
+                ),
+              ],
+              next_bus: firstEta
+                ? {
+                    bus_id: firstEta.bus_id,
+                    license_plate: firstEta.license_plate,
+                    minutes: firstEta.minutes,
+                    occupancy_level: firstEta.occupancy_level,
+                    traffic_level: firstEta.traffic_level,
+                  }
+                : null,
+            });
+          }
+        }
+      }
+    }
+
+    return plans;
+  }
+
+  private buildTripLeg(
+    assignment: NonNullable<StopLike['route_assignments']>[number],
+    boardingStop: StopLike,
+    alightingStop: StopLike,
+    waitMinutes: number,
+    rideMinutes: number,
+    eta?: ReturnType<TransitStateService['getEtaPredictions']>[number],
+  ) {
+    return {
+      route_id: assignment.route_id,
+      route_number: assignment.route_number,
+      route_name: assignment.route_name,
+      direction: assignment.direction,
+      boarding_stop: this.toCompactStop(boardingStop),
+      alighting_stop: this.toCompactStop(alightingStop),
+      wait_minutes: waitMinutes,
+      ride_minutes: rideMinutes,
+      next_bus: eta
+        ? {
+            bus_id: eta.bus_id,
+            license_plate: eta.license_plate,
+            minutes: eta.minutes,
+            occupancy_level: eta.occupancy_level,
+            traffic_level: eta.traffic_level,
+          }
+        : null,
+    };
+  }
+
+  private estimateRideMinutes(
+    route: RouteLike | undefined,
+    boardingAssignment: NonNullable<StopLike['route_assignments']>[number],
+    alightingAssignment: NonNullable<StopLike['route_assignments']>[number],
+  ) {
+    if (!route) {
+      return Math.max(8, (alightingAssignment.sequence - boardingAssignment.sequence) * 5);
+    }
+
+    const direction = route.directions[boardingAssignment.direction];
+    const status = route.current_status?.[boardingAssignment.direction];
+    const boardingStop = direction?.stops?.find((stop) => stop.sequence === boardingAssignment.sequence);
+    const alightingStop = direction?.stops?.find((stop) => stop.sequence === alightingAssignment.sequence);
+    const stopGap = Math.max(1, alightingAssignment.sequence - boardingAssignment.sequence);
+
+    if (!direction || !boardingStop || !alightingStop) {
+      return Math.max(8, Math.ceil(stopGap * 5.5));
+    }
+
+    const distanceMeters = remainingDistance(
+      boardingStop.distance_from_start_meters ?? 0,
+      alightingStop.distance_from_start_meters ?? 0,
+      direction.total_distance_meters ?? 0,
+    );
+    const averageSpeedKmh = Math.max(14, Number(status?.average_speed_kmh ?? 24));
+    const trafficDelayMinutes = Number(status?.average_delay_minutes ?? 0) * Math.min(1.2, stopGap / 10);
+    const dwellMinutes = stopGap * DEFAULT_DWELL_MINUTES_PER_STOP;
+
+    return Math.max(
+      Math.ceil(stopGap * 3.8),
+      Math.ceil(minutesFromDistance(distanceMeters, averageSpeedKmh) * BUS_TRIP_TIME_BUFFER + dwellMinutes + trafficDelayMinutes),
+    );
+  }
+
+  private findEta(
+    stop: StopLike,
+    assignment: NonNullable<StopLike['route_assignments']>[number],
+  ) {
+    return this.transitState
+      .getEtaPredictions(stop.stop_id)
+      .find(
+        (prediction) =>
+          prediction.route_id === assignment.route_id &&
+          prediction.direction === assignment.direction,
+      );
+  }
+
+  private dedupePlans<T extends { plan_id: string; total_minutes: number }>(plans: T[]) {
+    const planById = new Map<string, T>();
+
+    for (const plan of plans) {
+      const currentPlan = planById.get(plan.plan_id);
+
+      if (!currentPlan || plan.total_minutes < currentPlan.total_minutes) {
+        planById.set(plan.plan_id, plan);
+      }
+    }
+
+    return Array.from(planById.values());
   }
 
   private pickDispatchCandidate(buses: BusLike[], routeId: string, direction: DirectionId) {

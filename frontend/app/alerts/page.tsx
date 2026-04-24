@@ -80,7 +80,7 @@ export default function AlertsPage() {
       <div className="flex flex-1 pt-[60px]">
         <BottomNav />
 
-        <main className="flex-1 w-full overflow-y-auto pb-24 md:pb-8 md:pl-20">
+        <main className="flex-1 w-full overflow-y-auto pb-24 md:pb-8 md:pl-24">
           <div className="mx-auto flex max-w-4xl flex-col gap-6 px-4 pt-6 md:px-8">
             <section className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
               <h2 className="text-3xl font-bold text-gray-900">{t("alerts.title")}</h2>

@@ -67,7 +67,7 @@ export function BottomNav() {
       </nav>
 
       {/* Desktop/Tablet Side Rail Navigation */}
-      <nav className="hidden md:flex fixed left-0 top-[60px] bottom-0 w-20 flex-col items-center justify-start bg-white border-r border-gray-100 shadow-sm z-40 py-6 gap-8">
+      <nav className="hidden md:flex fixed left-0 top-[60px] bottom-0 w-24 flex-col items-center justify-start bg-white border-r border-gray-100 shadow-sm z-40 py-5 gap-3">
         {tabs.map((tab) => {
           const Icon = tab.icon;
           const isActive = pathname === tab.href;
@@ -77,12 +77,12 @@ export function BottomNav() {
               key={tab.href}
               href={tab.href}
               className={cn(
-                "flex flex-col items-center gap-1 p-2 w-full transition-colors",
-                isActive ? "text-brand" : "text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded-xl"
+                "flex min-h-[92px] w-full flex-col items-center justify-center gap-2 px-2 py-3 text-center transition-colors",
+                isActive ? "text-brand" : "text-gray-400 hover:text-gray-600 hover:bg-gray-50"
               )}
             >
               <Icon className="h-7 w-7" strokeWidth={isActive ? 2.5 : 2} />
-              <span className={cn("text-xs font-medium mt-1", isActive && "font-bold")}>
+              <span className={cn("max-w-[72px] text-center text-[12px] font-medium leading-tight", isActive && "font-bold")}>
                 {tab.name}
               </span>
             </Link>

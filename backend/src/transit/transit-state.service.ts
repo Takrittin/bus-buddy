@@ -1510,6 +1510,7 @@ export class TransitStateService {
         latitude: stop.location.lat,
         longitude: stop.location.lng,
         sequence: stop.sequence,
+        distance_from_start_meters: Math.round(stop.distanceFromStartMeters),
         landmark: stop.landmark,
         area_description: stop.areaDescription,
         is_major_stop: stop.isMajorStop,

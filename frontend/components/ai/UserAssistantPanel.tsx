@@ -98,7 +98,7 @@ export function UserAssistantPanel({
 
   return (
     <>
-      <div className="fixed bottom-24 right-4 z-[55] md:bottom-8 md:left-[104px] md:right-auto">
+      <div className="fixed bottom-24 right-4 z-[55] md:bottom-8 md:left-[120px] md:right-auto">
         <Button
           variant="primary"
           onClick={() => setIsOpen((currentValue) => !currentValue)}
@@ -110,7 +110,7 @@ export function UserAssistantPanel({
       </div>
 
       {isOpen ? (
-        <div className="fixed inset-x-4 bottom-[88px] z-[60] flex max-h-[calc(100vh-160px)] flex-col overflow-hidden rounded-3xl border border-orange-100 bg-white shadow-2xl md:inset-x-auto md:bottom-24 md:left-[104px] md:w-[380px] md:max-h-[min(720px,calc(100vh-128px))]">
+        <div className="fixed inset-x-4 bottom-[88px] z-[60] flex max-h-[calc(100vh-160px)] flex-col overflow-hidden rounded-3xl border border-orange-100 bg-white shadow-2xl md:inset-x-auto md:bottom-24 md:left-[120px] md:w-[380px] md:max-h-[min(720px,calc(100vh-128px))]">
           <div className="flex items-start justify-between gap-3 border-b border-gray-100 bg-gradient-to-r from-orange-50 to-white px-5 py-4">
             <div className="flex items-start gap-3">
               <div className="rounded-2xl bg-brand p-2 text-white">
@@ -146,7 +146,7 @@ export function UserAssistantPanel({
             {messages.map((message, index) => (
               <div
                 key={`${message.role}-${index}`}
-                className={`max-w-[88%] rounded-2xl px-4 py-3 text-sm leading-6 ${
+                className={`max-w-[88%] whitespace-pre-line rounded-2xl px-4 py-3 text-sm leading-6 ${
                   message.role === "assistant"
                     ? "bg-gray-100 text-gray-800"
                     : "ml-auto bg-brand text-white"

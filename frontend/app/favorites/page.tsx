@@ -79,7 +79,7 @@ export default function FavoritesPage() {
         {/* Responsive margin for side rail */}
         <BottomNav />
         
-        <main className="flex-1 w-full h-full overflow-y-auto pb-24 md:pb-8 md:pl-20">
+        <main className="flex-1 w-full h-full overflow-y-auto pb-24 md:pb-8 md:pl-24">
           <div className="max-w-4xl mx-auto px-4 pt-6 md:px-8">
             <h2 className="text-3xl font-bold text-gray-900 mb-8">{t("favorites.title")}</h2>
             

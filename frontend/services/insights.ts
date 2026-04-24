@@ -20,17 +20,39 @@ interface ApiCompactStop {
 
 interface ApiTripPlan {
   plan_id: string;
+  journey_type?: "direct" | "transfer";
   route_id: string;
   route_number: string;
   route_name: string;
   direction: "outbound" | "inbound";
   boarding_stop: ApiCompactStop;
   alighting_stop: ApiCompactStop;
+  transfer_stop?: ApiCompactStop;
   walk_to_stop_minutes: number;
   wait_minutes: number;
   ride_minutes: number;
+  transfer_wait_minutes?: number;
   walk_from_stop_minutes: number;
   total_minutes: number;
+  legs?: ApiTripPlanLeg[];
+  next_bus?: {
+    bus_id: string;
+    license_plate?: string;
+    minutes: number;
+    occupancy_level?: "low" | "medium" | "high" | "full";
+    traffic_level?: "light" | "moderate" | "heavy" | "severe";
+  } | null;
+}
+
+interface ApiTripPlanLeg {
+  route_id: string;
+  route_number: string;
+  route_name: string;
+  direction: "outbound" | "inbound";
+  boarding_stop: ApiCompactStop;
+  alighting_stop: ApiCompactStop;
+  wait_minutes: number;
+  ride_minutes: number;
   next_bus?: {
     bus_id: string;
     license_plate?: string;
@@ -135,17 +157,39 @@ function mapStop(stop: ApiCompactStop): CompactInsightStop {
 function mapTripPlan(plan: ApiTripPlan) {
   return {
     planId: plan.plan_id,
+    journeyType: plan.journey_type ?? "direct",
     routeId: plan.route_id,
     routeNumber: plan.route_number,
     routeName: plan.route_name,
     direction: plan.direction,
     boardingStop: mapStop(plan.boarding_stop),
     alightingStop: mapStop(plan.alighting_stop),
+    transferStop: plan.transfer_stop ? mapStop(plan.transfer_stop) : undefined,
     walkToStopMinutes: plan.walk_to_stop_minutes,
     waitMinutes: plan.wait_minutes,
     rideMinutes: plan.ride_minutes,
+    transferWaitMinutes: plan.transfer_wait_minutes ?? 0,
     walkFromStopMinutes: plan.walk_from_stop_minutes,
     totalMinutes: plan.total_minutes,
+    legs: (plan.legs ?? []).map((leg) => ({
+      routeId: leg.route_id,
+      routeNumber: leg.route_number,
+      routeName: leg.route_name,
+      direction: leg.direction,
+      boardingStop: mapStop(leg.boarding_stop),
+      alightingStop: mapStop(leg.alighting_stop),
+      waitMinutes: leg.wait_minutes,
+      rideMinutes: leg.ride_minutes,
+      nextBus: leg.next_bus
+        ? {
+            busId: leg.next_bus.bus_id,
+            licensePlate: leg.next_bus.license_plate,
+            minutes: leg.next_bus.minutes,
+            occupancyLevel: leg.next_bus.occupancy_level,
+            trafficLevel: leg.next_bus.traffic_level,
+          }
+        : null,
+    })),
     nextBus: plan.next_bus
       ? {
           busId: plan.next_bus.bus_id,
