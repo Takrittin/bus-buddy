@@ -79,7 +79,7 @@ export function AdminAssistantPanel({ activeSection }: { activeSection?: string 
       setError(
         requestError instanceof Error
           ? requestError.message
-          : "Unable to reach the BusBuddy admin assistant right now.",
+          : t("ai.adminUnavailable"),
       );
     } finally {
       setIsLoading(false);
@@ -118,7 +118,7 @@ export function AdminAssistantPanel({ activeSection }: { activeSection?: string 
               type="button"
               onClick={() => setIsOpen(false)}
               className="rounded-full bg-gray-100 p-2 text-gray-500 transition-colors hover:bg-gray-200"
-              aria-label="Close admin AI assistant"
+              aria-label={t("ai.closeAdmin")}
             >
               <X className="h-4 w-4" />
             </button>

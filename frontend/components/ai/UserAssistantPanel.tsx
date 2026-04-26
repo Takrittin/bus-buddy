@@ -89,7 +89,7 @@ export function UserAssistantPanel({
       setError(
         requestError instanceof Error
           ? requestError.message
-          : "Unable to reach the BusBuddy assistant right now.",
+          : t("ai.unavailable"),
       );
     } finally {
       setIsLoading(false);
@@ -130,7 +130,7 @@ export function UserAssistantPanel({
               type="button"
               onClick={() => setIsOpen(false)}
               className="rounded-full bg-gray-100 p-2 text-gray-500 transition-colors hover:bg-gray-200"
-              aria-label="Close AI assistant"
+              aria-label={t("ai.close")}
             >
               <X className="h-4 w-4" />
             </button>

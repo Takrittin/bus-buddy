@@ -3,6 +3,17 @@
 import React, { startTransition, useCallback, useEffect, useRef, useState } from "react";
 import { Location, RouteOverlay, TrafficLevel } from "@/types/bus";
 import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Minus, Plus } from "lucide-react";
+import { useLanguage } from "@/lib/i18n/LanguageContext";
+
+type MapMarkerType =
+  | "stop"
+  | "bus"
+  | "user"
+  | "trip_origin"
+  | "trip_board"
+  | "trip_transfer"
+  | "trip_alight"
+  | "trip_destination";
 
 interface MapViewProps {
   center: Location;
@@ -11,12 +22,12 @@ interface MapViewProps {
   markers?: Array<{
     id: string;
     location: Location;
-    type: "stop" | "bus" | "user";
+    type: MapMarkerType;
     title?: string;
     routeId?: string;
     direction?: "outbound" | "inbound";
   }>;
-  onMarkerClick?: (id: string, type: "stop" | "bus" | "user") => void;
+  onMarkerClick?: (id: string, type: MapMarkerType) => void;
 }
 
 type MapStatus = "loading" | "ready" | "fallback";
@@ -34,6 +45,12 @@ const LONGDO_ROUTE_TYPE_ROAD_AND_TOLLWAY = 17;
 const LONGDO_ROUTE_MODE = "c";
 const BUS_ROUTE_SNAP_DISTANCE_METERS = 420;
 const MAP_PAN_STEP_PX = 140;
+const MAP_ERROR_FAILED = "map.failedError";
+const MAP_ERROR_BROWSER_ONLY = "map.browserOnlyError";
+const MAP_ERROR_LOAD_TIMEOUT = "map.loadTimeoutError";
+const MAP_ERROR_API_UNAVAILABLE = "map.apiUnavailableError";
+const MAP_ERROR_DOWNLOAD = "map.downloadError";
+const MAP_ERROR_KEY_MISSING = "map.keyMissingError";
 
 let longdoScriptPromise: Promise<void> | null = null;
 const routePathMemoryCache = new Map<string, Location[]>();
@@ -51,15 +68,25 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
 
-function getMarkerColor(type: "stop" | "bus" | "user") {
+function getMarkerColor(type: MapMarkerType) {
   if (type === "bus") return "bg-blue-500";
   if (type === "user") return "bg-sky-700";
+  if (type === "trip_origin") return "bg-sky-600";
+  if (type === "trip_board") return "bg-brand";
+  if (type === "trip_transfer") return "bg-blue-600";
+  if (type === "trip_alight") return "bg-emerald-600";
+  if (type === "trip_destination") return "bg-emerald-700";
   return "bg-orange-500";
 }
 
-function getMarkerLabel(type: "stop" | "bus" | "user") {
+function getMarkerLabel(type: MapMarkerType, t: (key: string) => string) {
   if (type === "bus") return "B";
   if (type === "user") return "Y";
+  if (type === "trip_origin") return t("map.markerOrigin");
+  if (type === "trip_board") return "1";
+  if (type === "trip_transfer") return t("map.markerTransit");
+  if (type === "trip_alight") return t("map.markerDestination");
+  if (type === "trip_destination") return t("map.markerDestination");
   return "S";
 }
 
@@ -96,7 +123,7 @@ function getErrorMessage(error: unknown) {
     return error.message;
   }
 
-  return "Map failed to initialize.";
+  return MAP_ERROR_FAILED;
 }
 
 function buildRouteCacheKey(route: RouteOverlay) {
@@ -340,13 +367,15 @@ function createRoadPolyline(
   route: RouteOverlay,
   path: Location[],
 ) {
+  const visiblePath = clipPathToRouteSegment(path, route.clipTo);
+
   return new longdo.Polyline(
-    path.map((point) => toLongdoLocation(point)),
+    visiblePath.map((point) => toLongdoLocation(point)),
     {
       lineColor: route.color,
-      lineWidth: getRouteLineWidth(route.trafficLevel),
+      lineWidth: route.lineWidth ?? getRouteLineWidth(route.trafficLevel),
       lineStyle:
-        route.direction === "inbound"
+        route.lineStyle === "dashed" || (!route.lineStyle && route.direction === "inbound")
           ? longdo.LineStyle.Dashed
           : longdo.LineStyle.Solid,
     },
@@ -402,6 +431,110 @@ function distanceBetweenInMeters(left: Location, right: Location) {
   const rightPoint = toMeterPoint(right, avgLatitude);
 
   return Math.hypot(leftPoint.x - rightPoint.x, leftPoint.y - rightPoint.y);
+}
+
+function projectLocationOnPath(location: Location, path: Location[]) {
+  if (path.length < 2) {
+    return null;
+  }
+
+  let nearestProjection: {
+    point: Location;
+    segmentIndex: number;
+    ratio: number;
+    order: number;
+    distance: number;
+  } | null = null;
+
+  for (let index = 0; index < path.length - 1; index += 1) {
+    const start = path[index];
+    const end = path[index + 1];
+    const referenceLatitude = (start.lat + end.lat + location.lat) / 3;
+    const startPoint = toMeterPoint(start, referenceLatitude);
+    const endPoint = toMeterPoint(end, referenceLatitude);
+    const locationPoint = toMeterPoint(location, referenceLatitude);
+    const deltaX = endPoint.x - startPoint.x;
+    const deltaY = endPoint.y - startPoint.y;
+    const segmentLengthSquared = deltaX * deltaX + deltaY * deltaY;
+
+    if (segmentLengthSquared === 0) {
+      continue;
+    }
+
+    const ratio = Math.max(
+      0,
+      Math.min(
+        1,
+        ((locationPoint.x - startPoint.x) * deltaX +
+          (locationPoint.y - startPoint.y) * deltaY) /
+          segmentLengthSquared,
+      ),
+    );
+    const point = {
+      lat: start.lat + (end.lat - start.lat) * ratio,
+      lng: start.lng + (end.lng - start.lng) * ratio,
+    };
+    const distance = distanceBetweenInMeters(location, point);
+
+    if (!nearestProjection || distance < nearestProjection.distance) {
+      nearestProjection = {
+        point,
+        segmentIndex: index,
+        ratio,
+        order: index + ratio,
+        distance,
+      };
+    }
+  }
+
+  return nearestProjection;
+}
+
+function buildPathBetweenProjections(
+  path: Location[],
+  start: NonNullable<ReturnType<typeof projectLocationOnPath>>,
+  end: NonNullable<ReturnType<typeof projectLocationOnPath>>,
+) {
+  const clippedPath: Location[] = [start.point];
+
+  for (
+    let pointIndex = start.segmentIndex + 1;
+    pointIndex <= end.segmentIndex;
+    pointIndex += 1
+  ) {
+    clippedPath.push(path[pointIndex]);
+  }
+
+  clippedPath.push(end.point);
+
+  return clippedPath.filter((point, index) => {
+    const previousPoint = clippedPath[index - 1];
+
+    return !previousPoint || distanceBetweenInMeters(previousPoint, point) > 3;
+  });
+}
+
+function clipPathToRouteSegment(
+  path: Location[],
+  clipTo?: RouteOverlay["clipTo"],
+) {
+  if (!clipTo || path.length < 2) {
+    return path;
+  }
+
+  const startProjection = projectLocationOnPath(clipTo.from, path);
+  const endProjection = projectLocationOnPath(clipTo.to, path);
+
+  if (!startProjection || !endProjection) {
+    return path;
+  }
+
+  const clippedPath =
+    startProjection.order <= endProjection.order
+      ? buildPathBetweenProjections(path, startProjection, endProjection)
+      : buildPathBetweenProjections(path, endProjection, startProjection).reverse();
+
+  return clippedPath.length >= 2 ? clippedPath : path;
 }
 
 function snapLocationToPath(
@@ -489,7 +622,7 @@ async function ensureRoadPath(route: RouteOverlay, apiKey: string) {
 
 function loadLongdoScript(apiKey: string) {
   if (typeof window === "undefined") {
-    return Promise.reject(new Error("Map can only load in the browser."));
+    return Promise.reject(new Error(MAP_ERROR_BROWSER_ONLY));
   }
 
   if (typeof window.longdo?.Map === "function") {
@@ -514,7 +647,7 @@ function loadLongdoScript(apiKey: string) {
     const timeoutId = window.setTimeout(() => {
       cleanup();
       longdoScriptPromise = null;
-      reject(new Error("Map service timed out while loading."));
+      reject(new Error(MAP_ERROR_LOAD_TIMEOUT));
     }, LONGDO_LOAD_TIMEOUT_MS);
 
     const onLoad = () => {
@@ -527,14 +660,14 @@ function loadLongdoScript(apiKey: string) {
       }
 
       longdoScriptPromise = null;
-      reject(new Error("Map service loaded, but the map API is unavailable."));
+      reject(new Error(MAP_ERROR_API_UNAVAILABLE));
     };
 
     const onError = () => {
       window.clearTimeout(timeoutId);
       cleanup();
       longdoScriptPromise = null;
-      reject(new Error("Unable to download the map service."));
+      reject(new Error(MAP_ERROR_DOWNLOAD));
     };
 
     script.addEventListener("load", onLoad);
@@ -558,6 +691,7 @@ export function MapView({
   markers = [],
   onMarkerClick,
 }: MapViewProps) {
+  const { locale, t } = useLanguage();
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const [mapStatus, setMapStatus] = useState<MapStatus>("loading");
   const [mapError, setMapError] = useState<string | null>(null);
@@ -579,7 +713,7 @@ export function MapView({
 
   useEffect(() => {
     window.handleMarkerClickFromLongdo = (id: string, type: string) => {
-      onMarkerClickRef.current?.(id, type as "stop" | "bus" | "user");
+      onMarkerClickRef.current?.(id, type as MapMarkerType);
     };
 
     return () => {
@@ -600,7 +734,7 @@ export function MapView({
       if (!apiKey) {
         if (!disposed) {
           setMapStatus("fallback");
-          setMapError("Map key is missing, so the live map cannot load.");
+          setMapError(MAP_ERROR_KEY_MISSING);
         }
         return;
       }
@@ -614,7 +748,7 @@ export function MapView({
 
         const map = new window.longdo.Map({
           placeholder: mapContainerRef.current,
-          language: "en",
+          language: locale,
           lastView: false,
           smoothZoom: true,
           ui: window.longdo.UiComponent.None,
@@ -640,7 +774,7 @@ export function MapView({
     return () => {
       disposed = true;
     };
-  }, [center, zoom]);
+  }, [center, locale, zoom]);
 
   useEffect(() => {
     if (mapStatus !== "ready" || !mapInstanceRef.current) {
@@ -703,13 +837,31 @@ export function MapView({
       let htmlString = "";
 
       // Convert Tailwind components to HTML strings for Longdo Map Custom Overlays
-      if (m.type === "stop") {
+      if (m.type === "stop" || m.type.startsWith("trip_")) {
+        const isTripMarker = m.type.startsWith("trip_");
+        const isNamedTripEndpoint =
+          m.type === "trip_origin" ||
+          m.type === "trip_transfer" ||
+          m.type === "trip_alight" ||
+          m.type === "trip_destination";
+        const markerLabel = getMarkerLabel(m.type, t);
+        const markerColor =
+          m.type === "trip_origin"
+            ? "#0284C7"
+            : m.type === "trip_board"
+              ? "#F26F22"
+              : m.type === "trip_transfer"
+                ? "#2563EB"
+                : m.type === "trip_alight" || m.type === "trip_destination"
+                  ? "#059669"
+                  : "#F26F22";
         htmlString = `
           <div onclick="window.handleMarkerClickFromLongdo('${m.id}', '${m.type}')" 
                style="cursor: pointer; position: relative;">
-            <div style="width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; background-color: #F26F22; color: white; border-radius: 50%; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); border: 2px solid white; font-size: 14px; font-weight: bold; position: absolute; transform: translate(-50%, -100%);">
-              S
+            <div style="${isNamedTripEndpoint ? "min-width: 72px; padding: 0 12px;" : `width: ${isTripMarker ? 40 : 32}px;`} height: ${isTripMarker ? 40 : 32}px; display: flex; align-items: center; justify-content: center; background-color: ${markerColor}; color: white; border-radius: 999px; box-shadow: 0 10px 20px -5px rgb(15 23 42 / 0.28); border: 3px solid white; font-size: ${isNamedTripEndpoint ? 12 : 14}px; letter-spacing: ${isNamedTripEndpoint ? "0.02em" : "0"}; font-weight: 900; position: absolute; transform: translate(-50%, -100%);">
+              ${markerLabel}
             </div>
+            ${isTripMarker && m.title ? `<div style="position: absolute; transform: translate(-50%, 8px); background: white; padding: 3px 7px; border-radius: 999px; box-shadow: 0 1px 4px rgba(15,23,42,0.22); font-size: 10px; font-weight: 700; font-family: ui-sans-serif, system-ui, sans-serif; white-space: nowrap; color: #111827;">${m.title}</div>` : ""}
           </div>
         `;
       } else if (m.type === "bus") {
@@ -719,7 +871,7 @@ export function MapView({
             <div style="width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; background-color: #3B82F6; color: white; border-radius: 8px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); border: 2px solid white; font-size: 16px; position: absolute; transform: translate(-50%, -100%); transition: all 0.3s ease;">
               🚌
             </div>
-            ${m.title ? `<div style="position: absolute; transform: translate(-50%, 8px); background: white; padding: 2px 6px; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.2); font-size: 10px; font-weight: 600; font-family: ui-sans-serif, system-ui, sans-serif; white-space: nowrap; color: #111827;">Route ${m.title}</div>` : ""}
+            ${m.title ? `<div style="position: absolute; transform: translate(-50%, 8px); background: white; padding: 2px 6px; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.2); font-size: 10px; font-weight: 600; font-family: ui-sans-serif, system-ui, sans-serif; white-space: nowrap; color: #111827;">${t("map.routeLabel", { routeNumber: m.title })}</div>` : ""}
           </div>
         `;
       } else if (m.type === "user") {
@@ -758,6 +910,9 @@ export function MapView({
     const w = window as any;
     const map = mapInstanceRef.current;
     const visibleRouteIds = new Set(routes.map((route) => route.id));
+    const apiKey = process.env.NEXT_PUBLIC_LONGDOMAP_KEY;
+    const renderVersion = routeRenderVersionRef.current + 1;
+    routeRenderVersionRef.current = renderVersion;
 
     Array.from(routeOverlaysRef.current.entries()).forEach(([routeId, overlay]) => {
       if (!visibleRouteIds.has(routeId)) {
@@ -785,7 +940,29 @@ export function MapView({
 
     routes.forEach((route) => {
       if (route.waypoints.length >= 2) {
-        replaceRouteOverlay(route, route.waypoints);
+        replaceRouteOverlay(route, getFallbackCachedRoutePath(route) ?? route.waypoints);
+
+        if (!apiKey) {
+          return;
+        }
+
+        void ensureRoadPath(route, apiKey)
+          .then((roadPath) => {
+            if (
+              routeRenderVersionRef.current !== renderVersion ||
+              !mapInstanceRef.current ||
+              roadPath.length < 2
+            ) {
+              return;
+            }
+
+            replaceRouteOverlay(route, roadPath);
+          })
+          .catch(() => {
+            if (!routeOverlaysRef.current.has(route.id)) {
+              replaceRouteOverlay(route, route.waypoints);
+            }
+          });
       }
     });
   }, [mapStatus, routes]);
@@ -843,6 +1020,11 @@ export function MapView({
               />
             ))}
             {markers.map((marker) => {
+              const isNamedTripEndpoint =
+                marker.type === "trip_origin" ||
+                marker.type === "trip_transfer" ||
+                marker.type === "trip_alight" ||
+                marker.type === "trip_destination";
               const left = clamp(
                 ((marker.location.lng - minLng) / lngSpan) * 100,
                 8,
@@ -863,18 +1045,22 @@ export function MapView({
                   style={{ left: `${left}%`, top: `${top}%` }}
                 >
                   <span
-                    className={`flex h-8 w-8 items-center justify-center rounded-full border-2 border-white text-xs font-bold text-white shadow-lg ${getMarkerColor(marker.type)}`}
+                    className={`flex items-center justify-center border-2 border-white font-black text-white shadow-lg ${
+                      isNamedTripEndpoint
+                        ? "h-9 min-w-[4.5rem] rounded-full px-3 text-[11px]"
+                        : "h-8 w-8 rounded-full text-xs"
+                    } ${getMarkerColor(marker.type)}`}
                   >
-                    {getMarkerLabel(marker.type)}
+                    {getMarkerLabel(marker.type, t)}
                   </span>
                 </button>
               );
             })}
           </div>
           <div className="absolute left-4 top-4 max-w-xs rounded-2xl border border-white/80 bg-white/90 px-4 py-3 shadow-lg backdrop-blur">
-            <p className="text-sm font-semibold text-slate-900">Preview Map</p>
+            <p className="text-sm font-semibold text-slate-900">{t("common.previewMap")}</p>
             <p className="mt-1 text-xs leading-5 text-slate-600">
-              {mapError ?? "The live map is unavailable right now, so a preview is shown instead."}
+              {mapError ? t(mapError) : t("map.previewUnavailable")}
             </p>
           </div>
         </div>
@@ -884,72 +1070,72 @@ export function MapView({
         <div className="absolute inset-0 flex items-center justify-center bg-gray-100 z-10">
           <div className="flex flex-col items-center">
             <span className="w-8 h-8 border-4 border-brand border-t-transparent flex-[0_0_auto] rounded-full animate-spin mb-4" />
-            <span className="text-sm font-medium text-gray-500">Loading Map...</span>
+            <span className="text-sm font-medium text-gray-500">{t("common.loadingMap")}</span>
           </div>
         </div>
       )}
 
       {mapStatus === "ready" && (
-        <div className="absolute left-4 top-1/2 z-20 flex -translate-y-1/2 flex-col items-center gap-3">
-          <div className="grid h-[112px] w-[112px] grid-cols-3 grid-rows-3 rounded-[28px] border border-white/80 bg-white/92 p-2 shadow-[0_18px_45px_rgba(15,23,42,0.16)] backdrop-blur">
+        <div className="absolute left-3 top-1/2 z-20 flex -translate-y-1/2 flex-col items-center gap-2 md:left-4 md:gap-3">
+          <div className="grid h-[84px] w-[84px] grid-cols-3 grid-rows-3 rounded-[22px] border border-white/80 bg-white/92 p-1.5 shadow-[0_18px_45px_rgba(15,23,42,0.16)] backdrop-blur md:h-[112px] md:w-[112px] md:rounded-[28px] md:p-2">
             <span />
             <button
               type="button"
-              aria-label="Move map up"
+              aria-label={t("map.moveUp")}
               onClick={() => handlePan(0, -MAP_PAN_STEP_PX)}
-              className="flex h-10 w-10 items-center justify-center self-center justify-self-center rounded-2xl text-[#F26F22] transition hover:bg-[#FFF4EC] active:bg-[#FFE6D6]"
+              className="flex h-7 w-7 items-center justify-center self-center justify-self-center rounded-xl text-[#F26F22] transition hover:bg-[#FFF4EC] active:bg-[#FFE6D6] md:h-10 md:w-10 md:rounded-2xl"
             >
-              <ChevronUp className="h-5 w-5" />
+              <ChevronUp className="h-4 w-4 md:h-5 md:w-5" />
             </button>
             <span />
             <button
               type="button"
-              aria-label="Move map left"
+              aria-label={t("map.moveLeft")}
               onClick={() => handlePan(-MAP_PAN_STEP_PX, 0)}
-              className="flex h-10 w-10 items-center justify-center self-center justify-self-center rounded-2xl text-[#F26F22] transition hover:bg-[#FFF4EC] active:bg-[#FFE6D6]"
+              className="flex h-7 w-7 items-center justify-center self-center justify-self-center rounded-xl text-[#F26F22] transition hover:bg-[#FFF4EC] active:bg-[#FFE6D6] md:h-10 md:w-10 md:rounded-2xl"
             >
-              <ChevronLeft className="h-5 w-5" />
+              <ChevronLeft className="h-4 w-4 md:h-5 md:w-5" />
             </button>
-            <div className="flex h-10 w-10 items-center justify-center self-center justify-self-center rounded-2xl bg-[#FFF4EC] text-[10px] font-semibold uppercase tracking-[0.16em] text-[#F26F22]">
+            <div className="flex h-8 w-8 items-center justify-center self-center justify-self-center rounded-xl bg-[#FFF4EC] text-[9px] font-semibold uppercase tracking-[0.12em] text-[#F26F22] md:h-10 md:w-10 md:rounded-2xl md:text-[10px] md:tracking-[0.16em]">
               Map
             </div>
             <button
               type="button"
-              aria-label="Move map right"
+              aria-label={t("map.moveRight")}
               onClick={() => handlePan(MAP_PAN_STEP_PX, 0)}
-              className="flex h-10 w-10 items-center justify-center self-center justify-self-center rounded-2xl text-[#F26F22] transition hover:bg-[#FFF4EC] active:bg-[#FFE6D6]"
+              className="flex h-7 w-7 items-center justify-center self-center justify-self-center rounded-xl text-[#F26F22] transition hover:bg-[#FFF4EC] active:bg-[#FFE6D6] md:h-10 md:w-10 md:rounded-2xl"
             >
-              <ChevronRight className="h-5 w-5" />
+              <ChevronRight className="h-4 w-4 md:h-5 md:w-5" />
             </button>
             <span />
             <button
               type="button"
-              aria-label="Move map down"
+              aria-label={t("map.moveDown")}
               onClick={() => handlePan(0, MAP_PAN_STEP_PX)}
-              className="flex h-10 w-10 items-center justify-center self-center justify-self-center rounded-2xl text-[#F26F22] transition hover:bg-[#FFF4EC] active:bg-[#FFE6D6]"
+              className="flex h-7 w-7 items-center justify-center self-center justify-self-center rounded-xl text-[#F26F22] transition hover:bg-[#FFF4EC] active:bg-[#FFE6D6] md:h-10 md:w-10 md:rounded-2xl"
             >
-              <ChevronDown className="h-5 w-5" />
+              <ChevronDown className="h-4 w-4 md:h-5 md:w-5" />
             </button>
             <span />
           </div>
 
-          <div className="flex flex-col overflow-hidden rounded-[22px] border border-white/80 bg-white/92 shadow-[0_18px_45px_rgba(15,23,42,0.16)] backdrop-blur">
+          <div className="flex flex-col overflow-hidden rounded-[18px] border border-white/80 bg-white/92 shadow-[0_18px_45px_rgba(15,23,42,0.16)] backdrop-blur md:rounded-[22px]">
             <button
               type="button"
-              aria-label="Zoom in"
+              aria-label={t("map.zoomIn")}
               onClick={() => handleZoomChange(1)}
-              className="flex h-12 w-12 items-center justify-center text-[#F26F22] transition hover:bg-[#FFF4EC] active:bg-[#FFE6D6]"
+              className="flex h-9 w-9 items-center justify-center text-[#F26F22] transition hover:bg-[#FFF4EC] active:bg-[#FFE6D6] md:h-12 md:w-12"
             >
-              <Plus className="h-5 w-5" />
+              <Plus className="h-4 w-4 md:h-5 md:w-5" />
             </button>
             <div className="mx-3 h-px bg-[#F3D5C0]" />
             <button
               type="button"
-              aria-label="Zoom out"
+              aria-label={t("map.zoomOut")}
               onClick={() => handleZoomChange(-1)}
-              className="flex h-12 w-12 items-center justify-center text-[#F26F22] transition hover:bg-[#FFF4EC] active:bg-[#FFE6D6]"
+              className="flex h-9 w-9 items-center justify-center text-[#F26F22] transition hover:bg-[#FFF4EC] active:bg-[#FFE6D6] md:h-12 md:w-12"
             >
-              <Minus className="h-5 w-5" />
+              <Minus className="h-4 w-4 md:h-5 md:w-5" />
             </button>
           </div>
         </div>

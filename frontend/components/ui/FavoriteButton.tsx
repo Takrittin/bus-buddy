@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import { Heart } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/components/ui/Button";
+import { useLanguage } from "@/lib/i18n/LanguageContext";
 
 interface FavoriteButtonProps {
   isFavorite: boolean;
@@ -12,6 +13,7 @@ interface FavoriteButtonProps {
 }
 
 export function FavoriteButton({ isFavorite, onToggle, className }: FavoriteButtonProps) {
+  const { t } = useLanguage();
   const [isLoading, setIsLoading] = useState(false);
 
   const handleToggle = async (e: React.MouseEvent) => {
@@ -31,7 +33,7 @@ export function FavoriteButton({ isFavorite, onToggle, className }: FavoriteButt
       isLoading={isLoading}
       onClick={handleToggle}
       className={cn("rounded-full hover:bg-red-50", className)}
-      aria-label={isFavorite ? "Remove from favorites" : "Add to favorites"}
+      aria-label={isFavorite ? t("common.removeFromFavorites") : t("common.addToFavorites")}
     >
       <Heart
         className={cn("h-5 w-5", isFavorite ? "fill-red-500 text-red-500" : "text-gray-400")}

@@ -86,12 +86,12 @@ export default function SettingsPage() {
     try {
       await changePassword(user.id, { password: nextPassword });
       setNextPassword("");
-      setPasswordMessage("Password updated successfully.");
+      setPasswordMessage(t("settings.passwordUpdated"));
     } catch (passwordError) {
       setError(
         passwordError instanceof Error
           ? passwordError.message
-          : "Unable to change password.",
+          : t("settings.passwordChangeError"),
       );
     }
   };
@@ -182,17 +182,17 @@ export default function SettingsPage() {
 
                   {user.mustResetPassword ? (
                     <div className="rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                      This account must set a new password before returning to regular use.
+                      {t("settings.mustResetPassword")}
                     </div>
                   ) : null}
 
                   <form className="space-y-3 rounded-2xl border border-gray-100 bg-gray-50 p-4" onSubmit={handleChangePassword}>
                     <div>
                       <h4 className="text-sm font-semibold uppercase tracking-[0.12em] text-gray-700">
-                        Change Password
+                        {t("settings.changePassword")}
                       </h4>
                       <p className="mt-1 text-sm text-gray-500">
-                        Update the current account password and clear any reset-required flag.
+                        {t("settings.changePasswordDescription")}
                       </p>
                     </div>
                     <input
@@ -201,14 +201,14 @@ export default function SettingsPage() {
                       onChange={(event) => setNextPassword(event.target.value)}
                       minLength={8}
                       required
-                      placeholder="New password"
+                      placeholder={t("settings.newPassword")}
                       className="w-full rounded-2xl border border-gray-200 px-4 py-3 outline-none transition-colors focus:border-brand"
                     />
                     {passwordMessage ? (
                       <p className="text-sm text-green-700">{passwordMessage}</p>
                     ) : null}
                     <Button variant="outline" type="submit" className="w-full md:w-auto">
-                      Change Password
+                      {t("settings.changePassword")}
                     </Button>
                   </form>
 
@@ -231,7 +231,7 @@ export default function SettingsPage() {
                         className="w-full md:w-auto"
                       >
                         <Shield className="mr-2 h-4 w-4" />
-                        Open Admin Console
+                        {t("common.openAdminConsole")}
                       </Button>
                     ) : null}
 

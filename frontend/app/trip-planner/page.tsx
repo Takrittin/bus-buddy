@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { AppHeader } from "@/components/navigation/AppHeader";
 import { BottomNav } from "@/components/navigation/BottomNav";
 import { Button } from "@/components/ui/Button";
@@ -8,7 +9,8 @@ import { getStops } from "@/services/stops";
 import { getTripPlan } from "@/services/insights";
 import { Location, Stop } from "@/types/bus";
 import { TripPlanOption, TripPlannerResult } from "@/types/insights";
-import { BusFront, LocateFixed, MapPin, Navigation, Route } from "lucide-react";
+import { saveTripPreview } from "@/lib/trip-preview";
+import { BusFront, LocateFixed, Map as MapIcon, MapPin, Navigation, Route } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 
 const CURRENT_LOCATION_VALUE = "__current_location__";
@@ -16,6 +18,7 @@ const DEFAULT_BANGKOK_CENTER: Location = { lat: 13.7457, lng: 100.5347 };
 
 export default function TripPlannerPage() {
   const { t } = useLanguage();
+  const router = useRouter();
   const [stops, setStops] = useState<Stop[]>([]);
   const [originStopId, setOriginStopId] = useState(CURRENT_LOCATION_VALUE);
   const [destinationStopId, setDestinationStopId] = useState("");
@@ -44,6 +47,10 @@ export default function TripPlannerPage() {
     originStopId === CURRENT_LOCATION_VALUE
       ? userLocation ?? DEFAULT_BANGKOK_CENTER
       : originStop?.location ?? null;
+  const originLabel =
+    originStopId === CURRENT_LOCATION_VALUE
+      ? t("home.currentLocation")
+      : originStop?.name ?? t("home.origin");
 
   const requestCurrentLocation = useCallback(() => {
     if (typeof navigator === "undefined" || !navigator.geolocation) {
@@ -122,6 +129,25 @@ export default function TripPlannerPage() {
       setIsPlanningTrip(false);
     }
   }, [destinationStop, originLocation]);
+
+  const handlePreviewPlan = useCallback(
+    (plan: TripPlanOption) => {
+      if (!originLocation || !destinationStop) {
+        return;
+      }
+
+      saveTripPreview({
+        plan,
+        originLabel,
+        originLocation,
+        destinationLabel: destinationStop.name,
+        destinationLocation: destinationStop.location,
+        createdAt: new Date().toISOString(),
+      });
+      router.push("/");
+    },
+    [destinationStop, originLabel, originLocation, router],
+  );
 
   return (
     <div className="flex min-h-screen w-full flex-col bg-gray-50">
@@ -225,7 +251,13 @@ export default function TripPlannerPage() {
                     {t("home.noTripPlanWithTransfer")}
                   </div>
                 ) : (
-                  tripPlan.plans.map((plan) => <TripPlanCard key={plan.planId} plan={plan} />)
+                  tripPlan.plans.map((plan) => (
+                    <TripPlanCard
+                      key={plan.planId}
+                      plan={plan}
+                      onPreview={() => handlePreviewPlan(plan)}
+                    />
+                  ))
                 )
               ) : (
                 <div className="rounded-[2rem] border border-dashed border-orange-200 bg-white p-8 text-center text-gray-500">
@@ -240,7 +272,13 @@ export default function TripPlannerPage() {
   );
 }
 
-function TripPlanCard({ plan }: { plan: TripPlanOption }) {
+function TripPlanCard({
+  plan,
+  onPreview,
+}: {
+  plan: TripPlanOption;
+  onPreview: () => void;
+}) {
   const { t } = useLanguage();
   const isTransfer = plan.journeyType === "transfer";
   const legs = plan.legs.length > 0 ? plan.legs : [
@@ -358,6 +396,13 @@ function TripPlanCard({ plan }: { plan: TripPlanOption }) {
             </div>
           </div>
         ))}
+      </div>
+
+      <div className="mt-4 flex justify-end">
+        <Button type="button" variant="outline" onClick={onPreview} className="rounded-2xl">
+          <MapIcon className="mr-2 h-4 w-4 text-brand" />
+          {t("home.previewOnMap")}
+        </Button>
       </div>
     </article>
   );

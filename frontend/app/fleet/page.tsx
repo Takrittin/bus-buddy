@@ -855,16 +855,16 @@ export default function FleetPage() {
       if (editingShiftId) {
         await updateShift(editingShiftId, payload);
         resetShiftForm();
-        setShiftActionSuccess("Shift updated.");
+        setShiftActionSuccess(t("fleet.shiftUpdated"));
       } else {
         await createShift(payload);
         resetShiftForm();
-        setShiftActionSuccess("Shift assigned.");
+        setShiftActionSuccess(t("fleet.shiftAssigned"));
         setIsShiftFormOpen(false);
       }
     } catch (error) {
       setShiftActionError(
-        error instanceof Error ? error.message : "Unable to save driver shift.",
+        error instanceof Error ? error.message : t("fleet.shiftSaveError"),
       );
     } finally {
       setIsSubmittingShift(false);
@@ -873,7 +873,10 @@ export default function FleetPage() {
 
   const handleCloseShift = async (shift: DriverShift) => {
     const shouldClose = window.confirm(
-      `Close shift for ${shift.driverName ?? shift.driverId} on ${shift.busVehicleNumber ?? shift.busId}?`,
+      t("fleet.confirmCloseShift", {
+        driver: shift.driverName ?? shift.driverId,
+        bus: shift.busVehicleNumber ?? shift.busId,
+      }),
     );
 
     if (!shouldClose) {
@@ -887,14 +890,14 @@ export default function FleetPage() {
       await closeShift(shift.id, {
         status: "COMPLETED",
       });
-      setShiftActionSuccess("Shift closed.");
+      setShiftActionSuccess(t("fleet.shiftClosed"));
 
       if (editingShiftId === shift.id) {
         resetShiftForm();
       }
     } catch (error) {
       setShiftActionError(
-        error instanceof Error ? error.message : "Unable to close driver shift.",
+        error instanceof Error ? error.message : t("fleet.shiftCloseError"),
       );
     } finally {
       setIsSubmittingShift(false);

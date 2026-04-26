@@ -139,4 +139,10 @@ export interface RouteOverlay {
   direction: Direction;
   waypoints: Location[];
   trafficLevel?: TrafficLevel;
+  lineStyle?: "solid" | "dashed";
+  lineWidth?: number;
+  clipTo?: {
+    from: Location;
+    to: Location;
+  };
 }

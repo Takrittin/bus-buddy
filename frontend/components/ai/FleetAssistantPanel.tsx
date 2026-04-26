@@ -90,7 +90,7 @@ export function FleetAssistantPanel({
       setError(
         requestError instanceof Error
           ? requestError.message
-          : "Unable to reach the BusBuddy fleet assistant right now.",
+          : t("ai.fleetUnavailable"),
       );
     } finally {
       setIsLoading(false);
@@ -129,7 +129,7 @@ export function FleetAssistantPanel({
               type="button"
               onClick={() => setIsOpen(false)}
               className="rounded-full bg-gray-100 p-2 text-gray-500 transition-colors hover:bg-gray-200"
-              aria-label="Close fleet AI assistant"
+              aria-label={t("ai.closeFleet")}
             >
               <X className="h-4 w-4" />
             </button>
