@@ -37,6 +37,22 @@ enum ShiftStatus {
   MISSED
 }
 
+enum TicketOrderStatus {
+  PENDING
+  REQUIRES_ACTION
+  PROCESSING
+  PAID
+  FAILED
+  CANCELED
+}
+
+enum TicketStatus {
+  ACTIVE
+  USED
+  EXPIRED
+  CANCELED
+}
+
 model User {
   id                String   @id @default(uuid())
   email             String   @unique
@@ -55,6 +71,8 @@ model User {
 
   favoriteStops  FavoriteStop[]
   subscriptions  NotificationSubscription[]
+  ticketOrders   TicketOrder[]
+  tickets        Ticket[]
 }
 
 model BusStop {
@@ -206,6 +224,47 @@ model NotificationSubscription {
   bus   Bus?    @relation(fields: [busId], references: [id])
 
   @@unique([userId, routeId, stopId])
+}
+
+model TicketOrder {
+  id                    String            @id @default(uuid())
+  userId                String?
+  amountSatang          Int
+  currency              String            @default("thb")
+  productName           String
+  status                TicketOrderStatus @default(PENDING)
+  stripePaymentIntentId String?           @unique
+  stripePaymentStatus   String?
+  customerEmail         String?
+  failureMessage        String?
+  paidAt                DateTime?
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+
+  user   User?   @relation(fields: [userId], references: [id])
+  ticket Ticket?
+
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+}
+
+model Ticket {
+  id          String       @id @default(uuid())
+  orderId     String       @unique
+  userId      String?
+  displayCode String       @unique
+  status      TicketStatus @default(ACTIVE)
+  validFrom   DateTime     @default(now())
+  validUntil  DateTime
+  usedAt      DateTime?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  order TicketOrder @relation(fields: [orderId], references: [id])
+  user  User?       @relation(fields: [userId], references: [id])
+
+  @@index([userId, createdAt])
+  @@index([status, validUntil])
 }
 
 model EtaPrediction {

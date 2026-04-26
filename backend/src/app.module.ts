@@ -6,6 +6,7 @@ import { BusesModule } from './buses/buses.module';
 import { EtaModule } from './eta/eta.module';
 import { FleetModule } from './fleet/fleet.module';
 import { InsightsModule } from './insights/insights.module';
+import { PaymentsModule } from './payments/payments.module';
 import { RoutesModule } from './routes/routes.module';
 import { SimulationModule } from './simulation/simulation.module';
 import { StopsModule } from './stops/stops.module';
@@ -20,6 +21,7 @@ import { UsersModule } from './users/users.module';
     EtaModule,
     FleetModule,
     InsightsModule,
+    PaymentsModule,
     RoutesModule,
     SimulationModule,
     StopsModule,
