@@ -22,7 +22,6 @@ Create a `.env.local` file in the `frontend` folder:
 ```env
 NEXT_PUBLIC_API_URL=http://localhost:3001
 NEXT_PUBLIC_LONGDOMAP_KEY=your_key_here
-NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_test_...
 ```
 
 ### 3. Run Development Server

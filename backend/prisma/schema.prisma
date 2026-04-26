@@ -37,20 +37,15 @@ enum ShiftStatus {
   MISSED
 }
 
-enum TicketOrderStatus {
-  PENDING
-  REQUIRES_ACTION
-  PROCESSING
-  PAID
-  FAILED
-  CANCELED
-}
-
-enum TicketStatus {
+enum PremiumSubscriptionStatus {
+  INCOMPLETE
+  INCOMPLETE_EXPIRED
+  TRIALING
   ACTIVE
-  USED
-  EXPIRED
+  PAST_DUE
   CANCELED
+  UNPAID
+  PAUSED
 }
 
 model User {
@@ -64,15 +59,15 @@ model User {
   isActive          Boolean  @default(true)
   mustResetPassword Boolean  @default(false)
   sessionVersion    Int      @default(1)
+  stripeCustomerId  String?  @unique
   lastLoginAt       DateTime?
   deletedAt         DateTime?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
-  favoriteStops  FavoriteStop[]
-  subscriptions  NotificationSubscription[]
-  ticketOrders   TicketOrder[]
-  tickets        Ticket[]
+  favoriteStops       FavoriteStop[]
+  subscriptions       NotificationSubscription[]
+  premiumSubscription PremiumSubscription?
 }
 
 model BusStop {
@@ -226,45 +221,27 @@ model NotificationSubscription {
   @@unique([userId, routeId, stopId])
 }
 
-model TicketOrder {
-  id                    String            @id @default(uuid())
-  userId                String?
-  amountSatang          Int
-  currency              String            @default("thb")
-  productName           String
-  status                TicketOrderStatus @default(PENDING)
-  stripePaymentIntentId String?           @unique
-  stripePaymentStatus   String?
-  customerEmail         String?
-  failureMessage        String?
-  paidAt                DateTime?
-  createdAt             DateTime          @default(now())
-  updatedAt             DateTime          @updatedAt
+model PremiumSubscription {
+  id                     String                    @id @default(uuid())
+  userId                 String                    @unique
+  stripeCustomerId       String
+  stripeSubscriptionId   String?                   @unique
+  stripePriceId          String?
+  status                 PremiumSubscriptionStatus @default(INCOMPLETE)
+  currentPeriodStart     DateTime?
+  currentPeriodEnd       DateTime?
+  trialEndsAt            DateTime?
+  cancelAtPeriodEnd      Boolean                   @default(false)
+  canceledAt             DateTime?
+  latestInvoiceId        String?
+  latestPaymentStatus    String?
+  createdAt              DateTime                  @default(now())
+  updatedAt              DateTime                  @updatedAt
 
-  user   User?   @relation(fields: [userId], references: [id])
-  ticket Ticket?
+  user User @relation(fields: [userId], references: [id])
 
-  @@index([userId, createdAt])
-  @@index([status, createdAt])
-}
-
-model Ticket {
-  id          String       @id @default(uuid())
-  orderId     String       @unique
-  userId      String?
-  displayCode String       @unique
-  status      TicketStatus @default(ACTIVE)
-  validFrom   DateTime     @default(now())
-  validUntil  DateTime
-  usedAt      DateTime?
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-
-  order TicketOrder @relation(fields: [orderId], references: [id])
-  user  User?       @relation(fields: [userId], references: [id])
-
-  @@index([userId, createdAt])
-  @@index([status, validUntil])
+  @@index([status, currentPeriodEnd])
+  @@index([stripeCustomerId])
 }
 
 model EtaPrediction {

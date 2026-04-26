@@ -9,7 +9,7 @@ The backend is designed to feel closer to a real Thai bus tracking app than gene
 - In-memory GTFS-like seed data that can later be swapped for real feeds
 - Live bus movement with dwell time, layovers, occupancy, traffic, and ETA changes
 - REST endpoints for routes, stops, nearby stops, live buses, route vehicles, and ETAs
-- PromptPay ticket payments through Stripe PaymentIntents and webhook fulfillment
+- Premium subscriptions through Stripe Billing, Checkout, and Customer Portal
 - Socket.IO events for vehicle updates, ETA updates, and route status updates
 
 ## Folder Structure
@@ -186,25 +186,25 @@ http://localhost:3001
 - `GET /buses/live/:routeId`
 - `GET /route-vehicles/:routeId`
 - `GET /eta?stopId=stop_siam`
-- `POST /payments/promptpay`
-- `GET /payments/orders/:orderId`
-- `POST /payments/stripe/webhook`
+- `GET /billing/me`
+- `POST /billing/checkout-session`
+- `POST /billing/customer-portal`
+- `POST /billing/stripe/webhook`
 
-## PromptPay Payments
+## Premium Billing
 
 Configure these environment variables before testing live payment flows:
 
 ```env
 STRIPE_SECRET_KEY="sk_test_..."
-STRIPE_PUBLISHABLE_KEY="pk_test_..."
+STRIPE_PREMIUM_PRICE_ID="price_..."
 STRIPE_WEBHOOK_SECRET="whsec_..."
-STRIPE_PROMPTPAY_TICKET_AMOUNT_SATANG=2500
 ```
 
 Use Stripe CLI locally to forward webhooks:
 
 ```bash
-stripe listen --events payment_intent.succeeded,payment_intent.processing,payment_intent.payment_failed,payment_intent.canceled,payment_intent.requires_action --forward-to localhost:3001/payments/stripe/webhook
+stripe listen --events checkout.session.completed,customer.subscription.created,customer.subscription.updated,customer.subscription.deleted --forward-to localhost:3001/billing/stripe/webhook
 ```
 
 ## Socket.IO Events

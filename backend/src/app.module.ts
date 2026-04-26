@@ -2,11 +2,11 @@ import { Module } from '@nestjs/common';
 import { AdminModule } from './admin/admin.module';
 import { AiModule } from './ai/ai.module';
 import { AuthModule } from './auth/auth.module';
+import { BillingModule } from './billing/billing.module';
 import { BusesModule } from './buses/buses.module';
 import { EtaModule } from './eta/eta.module';
 import { FleetModule } from './fleet/fleet.module';
 import { InsightsModule } from './insights/insights.module';
-import { PaymentsModule } from './payments/payments.module';
 import { RoutesModule } from './routes/routes.module';
 import { SimulationModule } from './simulation/simulation.module';
 import { StopsModule } from './stops/stops.module';
@@ -17,11 +17,11 @@ import { UsersModule } from './users/users.module';
     AdminModule,
     AiModule,
     AuthModule,
+    BillingModule,
     BusesModule,
     EtaModule,
     FleetModule,
     InsightsModule,
-    PaymentsModule,
     RoutesModule,
     SimulationModule,
     StopsModule,

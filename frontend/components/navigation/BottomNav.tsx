@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BusFront, Map, Heart, Settings, Bell, Shield, Route, Ticket } from "lucide-react";
+import { Bell, BusFront, Heart, Map, Route, Settings, Shield, Sparkles } from "lucide-react";
 import { cn } from "@/components/ui/Button";
 import { useAuth } from "@/hooks/auth/useAuth";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
@@ -14,7 +14,7 @@ export function BottomNav() {
   const riderTabs = [
     { name: t("nav.map"), href: "/", icon: Map },
     { name: t("nav.tripPlanner"), href: "/trip-planner", icon: Route },
-    { name: t("nav.tickets"), href: "/tickets", icon: Ticket },
+    { name: t("nav.premium"), href: "/premium", icon: Sparkles },
     { name: t("nav.favorites"), href: "/favorites", icon: Heart },
     { name: t("nav.alerts"), href: "/alerts", icon: Bell },
     { name: t("nav.settings"), href: "/settings", icon: Settings },

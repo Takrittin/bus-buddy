@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import React, { useMemo, useState } from "react";
 import { Bot, MessageCircle, SendHorizonal, Sparkles, X } from "lucide-react";
 import { askUserAssistant } from "@/services/ai";
@@ -7,6 +8,7 @@ import { Button } from "@/components/ui/Button";
 import { Location, Stop } from "@/types/bus";
 import { UserAssistantMessage } from "@/types/ai";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
+import { useAuth } from "@/hooks/auth/useAuth";
 
 const MAX_CLIENT_HISTORY_MESSAGES = 4;
 const MAX_CLIENT_HISTORY_CHARS = 220;
@@ -21,6 +23,7 @@ export function UserAssistantPanel({
   selectedRouteIds: string[];
 }) {
   const { locale, t } = useLanguage();
+  const { isAuthenticated } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
   const [inputValue, setInputValue] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -37,6 +40,7 @@ export function UserAssistantPanel({
     t("ai.suggestions.fastestRoute"),
     t("ai.suggestions.bangKapi"),
   ];
+  const premiumError = error?.toLowerCase().includes("premium") ?? false;
 
   const conversationHistory = useMemo(() => {
     return messages
@@ -143,6 +147,15 @@ export function UserAssistantPanel({
               </div>
             ) : null}
 
+            {!isAuthenticated ? (
+              <div className="rounded-2xl border border-orange-100 bg-orange-50 px-4 py-3 text-sm text-orange-900">
+                <p>{t("ai.premiumRequired")}</p>
+                <Link href="/premium" className="mt-2 inline-flex font-bold text-brand">
+                  {t("ai.openPremium")}
+                </Link>
+              </div>
+            ) : null}
+
             {messages.map((message, index) => (
               <div
                 key={`${message.role}-${index}`}
@@ -165,6 +178,11 @@ export function UserAssistantPanel({
             {error ? (
               <div className="rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
                 {error}
+                {premiumError ? (
+                  <Link href="/premium" className="mt-2 block font-bold text-red-800">
+                    {t("ai.openPremium")}
+                  </Link>
+                ) : null}
               </div>
             ) : null}
           </div>
