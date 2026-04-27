@@ -11,6 +11,13 @@ export async function createPremiumCheckoutSession() {
   });
 }
 
+export async function syncPremiumCheckoutSession(sessionId: string) {
+  return fetchApi<BillingStatus>("/billing/checkout-session/sync", {
+    method: "POST",
+    body: JSON.stringify({ sessionId }),
+  });
+}
+
 export async function createCustomerPortalSession() {
   return fetchApi<BillingRedirect>("/billing/customer-portal", {
     method: "POST",

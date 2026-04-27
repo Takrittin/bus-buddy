@@ -12,7 +12,7 @@ const config: Config = {
       colors: {
         brand: {
           light: "#F58742",
-          DEFAULT: "#F26F22", // ViaBus-style orange
+          DEFAULT: "#F26F22",
           dark: "#D95D1A",
         },
         primary: {

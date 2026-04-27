@@ -1,16 +1,21 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
-  AlertCircle,
+  BarChart3,
   BellRing,
   Bot,
-  CheckCircle2,
+  Check,
   CreditCard,
+  Crown,
   Heart,
+  MapPinned,
+  Navigation,
   Route,
   ShieldCheck,
   Sparkles,
+  Timer,
 } from "lucide-react";
 import { AppHeader } from "@/components/navigation/AppHeader";
 import { BottomNav } from "@/components/navigation/BottomNav";
@@ -21,30 +26,21 @@ import {
   createCustomerPortalSession,
   createPremiumCheckoutSession,
   getBillingStatus,
+  syncPremiumCheckoutSession,
 } from "@/services/billing";
 import { BillingStatus } from "@/types/billing";
 
 export default function PremiumPage() {
-  const { t, locale } = useLanguage();
-  const { user, isAuthenticated, isLoading, canUseRiderTools } = useAuth();
+  const router = useRouter();
+  const { t } = useLanguage();
+  const { isAuthenticated, isLoading, canUseRiderTools, user } = useAuth();
   const [billingStatus, setBillingStatus] = useState<BillingStatus | null>(null);
   const [isLoadingBilling, setIsLoadingBilling] = useState(false);
   const [isStartingCheckout, setIsStartingCheckout] = useState(false);
-  const [isOpeningPortal, setIsOpeningPortal] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [hasHandledCheckoutReturn, setHasHandledCheckoutReturn] = useState(false);
 
   const canLoadBilling = isAuthenticated && Boolean(user?.id) && canUseRiderTools;
-
-  const formattedPeriodEnd = useMemo(() => {
-    if (!billingStatus?.currentPeriodEnd) {
-      return null;
-    }
-
-    return new Intl.DateTimeFormat(locale === "th" ? "th-TH" : "en-US", {
-      dateStyle: "medium",
-      timeStyle: "short",
-    }).format(new Date(billingStatus.currentPeriodEnd));
-  }, [billingStatus?.currentPeriodEnd, locale]);
 
   const loadBillingStatus = useCallback(async () => {
     if (!canLoadBilling) {
@@ -69,216 +65,213 @@ export default function PremiumPage() {
   }, [canLoadBilling, t]);
 
   useEffect(() => {
-    void loadBillingStatus();
-  }, [loadBillingStatus]);
+    if (!canLoadBilling) {
+      void loadBillingStatus();
+      return;
+    }
 
-  const startCheckout = async () => {
+    if (hasHandledCheckoutReturn || typeof window === "undefined") {
+      return;
+    }
+
+    const searchParams = new URLSearchParams(window.location.search);
+    const checkoutState = searchParams.get("checkout");
+    const sessionId = searchParams.get("session_id");
+
+    if (checkoutState !== "success" || !sessionId) {
+      setHasHandledCheckoutReturn(true);
+      void loadBillingStatus();
+      return;
+    }
+
+    setHasHandledCheckoutReturn(true);
+    setIsLoadingBilling(true);
+    setError(null);
+
+    syncPremiumCheckoutSession(sessionId)
+      .then((status) => {
+        setBillingStatus(status);
+        window.history.replaceState(null, "", "/premium");
+      })
+      .catch((syncError) => {
+        setError(
+          syncError instanceof Error
+            ? syncError.message
+            : t("premium.statusError"),
+        );
+      })
+      .finally(() => {
+        setIsLoadingBilling(false);
+      });
+  }, [canLoadBilling, hasHandledCheckoutReturn, loadBillingStatus, t]);
+
+  const handleGetPremium = async () => {
+    if (isLoading) {
+      return;
+    }
+
+    if (!isAuthenticated) {
+      router.push("/settings?mode=register");
+      return;
+    }
+
+    if (!canUseRiderTools) {
+      return;
+    }
+
     setIsStartingCheckout(true);
     setError(null);
 
     try {
-      const session = await createPremiumCheckoutSession();
+      const session = billingStatus?.isPremium
+        ? await createCustomerPortalSession()
+        : await createPremiumCheckoutSession();
       window.location.assign(session.url);
     } catch (checkoutError) {
       setError(
         checkoutError instanceof Error
           ? checkoutError.message
-          : t("premium.checkoutError"),
+          : billingStatus?.isPremium
+            ? t("premium.portalError")
+            : t("premium.checkoutError"),
       );
       setIsStartingCheckout(false);
     }
   };
 
-  const openPortal = async () => {
-    setIsOpeningPortal(true);
-    setError(null);
-
-    try {
-      const session = await createCustomerPortalSession();
-      window.location.assign(session.url);
-    } catch (portalError) {
-      setError(
-        portalError instanceof Error
-          ? portalError.message
-          : t("premium.portalError"),
-      );
-      setIsOpeningPortal(false);
-    }
-  };
+  const isPrimaryActionLoading = isStartingCheckout || isLoadingBilling;
+  const primaryActionLabel = billingStatus?.isPremium
+    ? t("premium.manageSubscription")
+    : isAuthenticated
+      ? t("premium.payWithCredit")
+      : t("premium.createAccount");
 
   return (
-    <div className="flex min-h-screen w-full flex-col bg-gray-50">
+    <div className="flex min-h-screen w-full flex-col bg-[#FFF8F1]">
       <AppHeader />
 
       <div className="flex min-h-[calc(100vh-60px)] flex-1 pt-[60px]">
         <BottomNav />
 
         <main className="w-full flex-1 pb-24 md:pb-8 md:pl-24">
-          <div className="mx-auto flex max-w-5xl flex-col gap-5 px-4 py-5 sm:px-6 md:px-8 md:py-8">
-            <section className="overflow-hidden rounded-3xl border border-orange-100 bg-white shadow-sm">
-              <div className="grid gap-6 bg-gradient-to-br from-orange-50 via-white to-emerald-50 p-5 sm:p-6 md:grid-cols-[1fr_auto] md:items-center md:p-8">
+          <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-5 sm:px-6 md:px-8 md:py-8">
+            <section className="relative overflow-hidden rounded-[2rem] border border-orange-100 bg-white shadow-sm">
+              <div className="absolute -right-20 -top-24 h-72 w-72 rounded-full bg-orange-100/80 blur-3xl" />
+              <div className="absolute -bottom-28 left-8 h-72 w-72 rounded-full bg-emerald-100/70 blur-3xl" />
+
+              <div className="relative grid gap-8 p-6 md:grid-cols-[minmax(0,1fr)_380px] md:items-center md:p-10">
                 <div>
-                  <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-white px-3 py-1 text-xs font-bold uppercase tracking-[0.14em] text-brand shadow-sm">
-                    <Sparkles className="h-4 w-4" />
+                  <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-orange-100 bg-orange-50 px-4 py-2 text-xs font-black uppercase tracking-[0.16em] text-brand">
+                    <Crown className="h-4 w-4" />
                     {t("premium.eyebrow")}
                   </div>
-                  <h1 className="text-3xl font-black tracking-tight text-gray-950 sm:text-4xl">
+                  <h1 className="max-w-3xl text-4xl font-black leading-tight tracking-tight text-gray-950 sm:text-5xl">
                     {t("premium.title")}
                   </h1>
-                  <p className="mt-3 max-w-2xl text-sm leading-6 text-gray-600 sm:text-base">
+                  <p className="mt-4 max-w-2xl text-base leading-7 text-gray-600 sm:text-lg">
                     {t("premium.subtitle")}
                   </p>
-                </div>
-
-                <div className="rounded-2xl border border-white bg-white/90 px-5 py-4 shadow-sm">
-                  <p className="text-xs font-bold uppercase tracking-[0.16em] text-gray-500">
-                    {t("premium.plan")}
-                  </p>
-                  <p className="mt-1 text-3xl font-black text-gray-950">
-                    {t("premium.price")}
-                  </p>
-                </div>
-              </div>
-            </section>
-
-            {isLoading ? (
-              <StatusCard
-                icon={<ShieldCheck className="h-6 w-6" />}
-                title={t("common.loading")}
-                description={t("premium.loading")}
-              />
-            ) : !isAuthenticated || !user ? (
-              <StatusCard
-                icon={<AlertCircle className="h-6 w-6" />}
-                title={t("premium.signInTitle")}
-                description={t("premium.signInDescription")}
-              />
-            ) : !canUseRiderTools ? (
-              <StatusCard
-                icon={<AlertCircle className="h-6 w-6" />}
-                title={t("premium.riderOnlyTitle")}
-                description={t("premium.riderOnlyDescription")}
-              />
-            ) : (
-              <section className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
-                <div className="rounded-3xl border border-gray-100 bg-white p-5 shadow-sm sm:p-6">
-                  <div className="flex items-start gap-4">
-                    <div className="rounded-2xl bg-orange-100 p-3 text-brand">
-                      <Sparkles className="h-6 w-6" />
-                    </div>
-                    <div>
-                      <h2 className="text-xl font-black text-gray-950">
-                        {billingStatus?.isPremium
-                          ? t("premium.activeTitle")
-                          : t("premium.upgradeTitle")}
-                      </h2>
-                      <p className="mt-2 text-sm leading-6 text-gray-600">
-                        {billingStatus?.isPremium
-                          ? t("premium.activeDescription")
-                          : t("premium.upgradeDescription")}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="mt-6 grid gap-3 sm:grid-cols-2">
-                    <PremiumFeature icon={<Bot />} title={t("premium.featureAi")} />
-                    <PremiumFeature icon={<BellRing />} title={t("premium.featureAlerts")} />
-                    <PremiumFeature icon={<Heart />} title={t("premium.featureFavorites")} />
-                    <PremiumFeature icon={<Route />} title={t("premium.featurePlanner")} />
-                  </div>
-
-                  {error ? (
-                    <div className="mt-5 rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
-                      {error}
-                    </div>
-                  ) : null}
 
                   <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-                    {billingStatus?.isPremium ? (
-                      <Button
-                        type="button"
-                        onClick={openPortal}
-                        disabled={isOpeningPortal}
-                        isLoading={isOpeningPortal}
-                        className="h-12 rounded-2xl"
-                      >
-                        <CreditCard className="mr-2 h-4 w-4" />
-                        {t("premium.manageSubscription")}
-                      </Button>
-                    ) : (
-                      <Button
-                        type="button"
-                        onClick={startCheckout}
-                        disabled={isStartingCheckout}
-                        isLoading={isStartingCheckout}
-                        className="h-12 rounded-2xl"
-                      >
-                        <Sparkles className="mr-2 h-4 w-4" />
-                        {t("premium.startSubscription")}
-                      </Button>
-                    )}
-
+                    <Button
+                      type="button"
+                      onClick={handleGetPremium}
+                      isLoading={isPrimaryActionLoading}
+                      disabled={isLoading || (isAuthenticated && !canUseRiderTools)}
+                      className="h-12 rounded-2xl px-6 text-base font-black shadow-xl shadow-orange-500/20"
+                    >
+                      <CreditCard className="mr-2 h-5 w-5" />
+                      {primaryActionLabel}
+                    </Button>
                     <Button
                       type="button"
                       variant="outline"
-                      onClick={() => void loadBillingStatus()}
-                      disabled={isLoadingBilling}
-                      isLoading={isLoadingBilling}
-                      className="h-12 rounded-2xl bg-white"
+                      onClick={() => router.push("/trip-planner")}
+                      className="h-12 rounded-2xl bg-white px-6 text-base font-bold"
                     >
-                      {t("premium.refreshStatus")}
+                      <Route className="mr-2 h-5 w-5 text-brand" />
+                      {t("premium.tryPlanner")}
                     </Button>
                   </div>
                 </div>
 
-                <aside className="rounded-3xl border border-gray-100 bg-white p-5 shadow-sm sm:p-6">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className="text-xs font-bold uppercase tracking-[0.16em] text-gray-500">
-                        {t("premium.statusLabel")}
-                      </p>
-                      <h3 className="mt-1 text-lg font-black text-gray-950">
-                        {getStatusLabel(billingStatus, t)}
-                      </h3>
-                    </div>
-                    <div
-                      className={`rounded-2xl p-3 ${
-                        billingStatus?.isPremium
-                          ? "bg-emerald-100 text-emerald-700"
-                          : "bg-orange-100 text-brand"
-                      }`}
-                    >
-                      {billingStatus?.isPremium ? (
-                        <CheckCircle2 className="h-5 w-5" />
-                      ) : (
-                        <ShieldCheck className="h-5 w-5" />
-                      )}
-                    </div>
-                  </div>
+                <PremiumSnapshot />
+              </div>
+            </section>
 
-                  <div className="mt-5 space-y-3 text-sm">
-                    <InfoRow
-                      label={t("premium.account")}
-                      value={user.email ?? user.name ?? t("common.busBuddy")}
-                    />
-                    <InfoRow
-                      label={t("premium.subscription")}
-                      value={billingStatus?.status ?? t("premium.none")}
-                    />
-                    <InfoRow
-                      label={t("premium.renews")}
-                      value={formattedPeriodEnd ?? t("common.notAvailable")}
-                    />
-                  </div>
+            <section className="grid gap-4 lg:grid-cols-2">
+              <PlanCard
+                eyebrow={t("premium.freePlan")}
+                title={t("premium.freeTitle")}
+                price={t("premium.freePrice")}
+                description={t("premium.freeDescription")}
+                features={[
+                  { icon: <MapPinned />, text: t("premium.freeMap") },
+                  { icon: <Route />, text: t("premium.freeRoutes") },
+                  { icon: <Timer />, text: t("premium.freeBasicEta") },
+                ]}
+              />
 
-                  {billingStatus?.cancelAtPeriodEnd ? (
-                    <div className="mt-5 rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                      {t("premium.cancelAtPeriodEnd")}
-                    </div>
-                  ) : null}
-                </aside>
-              </section>
-            )}
+              <PlanCard
+                isHighlighted
+                eyebrow={t("premium.premiumPlan")}
+                title={t("premium.premiumTitle")}
+                price={t("premium.price")}
+                description={t("premium.premiumDescription")}
+                features={[
+                  { icon: <Bot />, text: t("premium.premiumAi") },
+                  { icon: <BellRing />, text: t("premium.premiumAlerts") },
+                  { icon: <Heart />, text: t("premium.premiumFavorites") },
+                  { icon: <Navigation />, text: t("premium.premiumPlanner") },
+                  { icon: <BarChart3 />, text: t("premium.premiumAnalytics") },
+                  { icon: <ShieldCheck />, text: t("premium.premiumNoAds") },
+                ]}
+                action={
+                  <Button
+                    type="button"
+                    onClick={handleGetPremium}
+                    isLoading={isPrimaryActionLoading}
+                    disabled={isLoading || (isAuthenticated && !canUseRiderTools)}
+                    className="mt-5 h-12 w-full rounded-2xl text-base font-black"
+                  >
+                    <CreditCard className="mr-2 h-5 w-5" />
+                    {billingStatus?.isPremium
+                      ? t("premium.manageSubscription")
+                      : t("premium.goToCreditPayment")}
+                  </Button>
+                }
+              />
+            </section>
+
+            {error ? (
+              <div className="rounded-3xl border border-red-100 bg-red-50 px-5 py-4 text-sm font-semibold text-red-700">
+                {error}
+              </div>
+            ) : null}
+
+            <section className="grid gap-4 md:grid-cols-3">
+              <ValueCard
+                icon={<Sparkles />}
+                title={t("premium.smartCommuteTitle")}
+                description={t("premium.smartCommuteDescription")}
+              />
+              <ValueCard
+                icon={<BellRing />}
+                title={t("premium.alertControlTitle")}
+                description={t("premium.alertControlDescription")}
+              />
+              <ValueCard
+                icon={<BarChart3 />}
+                title={t("premium.recommendationTitle")}
+                description={t("premium.recommendationDescription")}
+              />
+            </section>
+
+            {isAuthenticated && !canUseRiderTools ? (
+              <div className="rounded-3xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm font-semibold text-amber-900">
+                {t("premium.riderOnlyDescription")}
+              </div>
+            ) : null}
           </div>
         </main>
       </div>
@@ -286,16 +279,125 @@ export default function PremiumPage() {
   );
 }
 
-function PremiumFeature({ icon, title }: { icon: React.ReactNode; title: string }) {
+function PremiumSnapshot() {
+  const { t } = useLanguage();
+
   return (
-    <div className="flex items-center gap-3 rounded-2xl border border-gray-100 bg-gray-50 px-4 py-3">
-      <div className="text-brand [&_svg]:h-5 [&_svg]:w-5">{icon}</div>
-      <p className="text-sm font-bold text-gray-950">{title}</p>
+    <div className="relative overflow-hidden rounded-[2rem] border border-orange-100 bg-[#122033] p-5 text-white shadow-2xl shadow-orange-500/15">
+      <div className="absolute -right-12 -top-12 h-36 w-36 rounded-full bg-brand/40 blur-3xl" />
+      <div className="absolute -bottom-16 left-10 h-32 w-32 rounded-full bg-emerald-400/30 blur-3xl" />
+      <div className="relative">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.16em] text-orange-100">
+              {t("premium.busBuddyPlus")}
+            </p>
+            <h2 className="mt-2 text-2xl font-black">{t("premium.dashboardTitle")}</h2>
+          </div>
+          <div className="rounded-2xl bg-white/12 p-3">
+            <Sparkles className="h-6 w-6 text-orange-100" />
+          </div>
+        </div>
+
+        <div className="mt-7 rounded-3xl bg-white p-4 text-gray-950">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.12em] text-gray-400">
+                {t("premium.routeRecommendation")}
+              </p>
+              <p className="mt-1 text-xl font-black text-gray-950">29 + 145</p>
+            </div>
+            <div className="rounded-2xl bg-orange-50 px-4 py-2 text-right">
+              <p className="text-xs font-bold text-brand">{t("premium.savedTime")}</p>
+              <p className="text-2xl font-black text-brand">12m</p>
+            </div>
+          </div>
+          <div className="mt-4 grid grid-cols-3 gap-2 text-center text-xs font-bold text-gray-600">
+            <div className="rounded-2xl bg-gray-50 px-2 py-3">{t("premium.aiShort")}</div>
+            <div className="rounded-2xl bg-gray-50 px-2 py-3">{t("premium.alertsShort")}</div>
+            <div className="rounded-2xl bg-gray-50 px-2 py-3">{t("premium.plannerShort")}</div>
+          </div>
+        </div>
+
+        <p className="mt-4 text-sm leading-6 text-white/75">
+          {t("premium.dashboardDescription")}
+        </p>
+      </div>
     </div>
   );
 }
 
-function StatusCard({
+function PlanCard({
+  eyebrow,
+  title,
+  price,
+  description,
+  features,
+  isHighlighted,
+  action,
+}: {
+  eyebrow: string;
+  title: string;
+  price: string;
+  description: string;
+  features: Array<{ icon: React.ReactNode; text: string }>;
+  isHighlighted?: boolean;
+  action?: React.ReactNode;
+}) {
+  return (
+    <article
+      className={`rounded-[2rem] border p-5 shadow-sm sm:p-6 ${
+        isHighlighted
+          ? "border-orange-200 bg-white shadow-orange-100"
+          : "border-gray-100 bg-white"
+      }`}
+    >
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p
+            className={`text-xs font-black uppercase tracking-[0.16em] ${
+              isHighlighted ? "text-brand" : "text-gray-500"
+            }`}
+          >
+            {eyebrow}
+          </p>
+          <h2 className="mt-2 text-2xl font-black text-gray-950">{title}</h2>
+          <p className="mt-2 text-sm leading-6 text-gray-600">{description}</p>
+        </div>
+        <div
+          className={`shrink-0 rounded-2xl px-4 py-2 text-right ${
+            isHighlighted ? "bg-orange-50 text-brand" : "bg-gray-50 text-gray-700"
+          }`}
+        >
+          <p className="text-xs font-bold uppercase tracking-[0.12em]">
+            {isHighlighted ? "Premium" : "Free"}
+          </p>
+          <p className="text-lg font-black">{price}</p>
+        </div>
+      </div>
+
+      <div className="mt-6 space-y-3">
+        {features.map((feature) => (
+          <div key={feature.text} className="flex items-center gap-3 rounded-2xl bg-gray-50 px-4 py-3">
+            <div
+              className={`flex h-9 w-9 items-center justify-center rounded-xl ${
+                isHighlighted ? "bg-orange-100 text-brand" : "bg-white text-gray-500"
+              } [&_svg]:h-4 [&_svg]:w-4`}
+            >
+              {feature.icon}
+            </div>
+            <p className="text-sm font-bold text-gray-800">{feature.text}</p>
+            <Check className="ml-auto h-5 w-5 shrink-0 text-emerald-600" />
+          </div>
+        ))}
+      </div>
+
+      {action}
+    </article>
+  );
+}
+
+function ValueCard({
   icon,
   title,
   description,
@@ -305,42 +407,12 @@ function StatusCard({
   description: string;
 }) {
   return (
-    <section className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
-      <div className="flex items-start gap-4">
-        <div className="rounded-2xl bg-orange-100 p-3 text-brand">{icon}</div>
-        <div>
-          <h2 className="text-lg font-black text-gray-950">{title}</h2>
-          <p className="mt-2 text-sm leading-6 text-gray-600">{description}</p>
-        </div>
+    <article className="rounded-3xl border border-orange-100 bg-white p-5 shadow-sm">
+      <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-orange-50 text-brand [&_svg]:h-5 [&_svg]:w-5">
+        {icon}
       </div>
-    </section>
+      <h3 className="text-lg font-black text-gray-950">{title}</h3>
+      <p className="mt-2 text-sm leading-6 text-gray-600">{description}</p>
+    </article>
   );
-}
-
-function InfoRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-center justify-between gap-4 rounded-2xl bg-gray-50 px-4 py-3">
-      <span className="text-gray-500">{label}</span>
-      <span className="text-right font-bold text-gray-950">{value}</span>
-    </div>
-  );
-}
-
-function getStatusLabel(
-  billingStatus: BillingStatus | null,
-  t: (key: string) => string,
-) {
-  if (!billingStatus) {
-    return t("premium.statusUnknown");
-  }
-
-  if (billingStatus.isPremium) {
-    return t("premium.statusActive");
-  }
-
-  if (billingStatus.status === "PAST_DUE") {
-    return t("premium.statusPastDue");
-  }
-
-  return t("premium.statusFree");
 }

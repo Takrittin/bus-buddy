@@ -1,4 +1,5 @@
 import {
+  Body,
   Controller,
   Get,
   Headers,
@@ -27,6 +28,19 @@ export class BillingController {
     @Headers('x-busbuddy-session-version') actorSessionVersion?: string,
   ) {
     return this.billingService.createCheckoutSession(
+      actorUserId,
+      actorSessionVersion,
+    );
+  }
+
+  @Post('checkout-session/sync')
+  syncCheckoutSession(
+    @Body('sessionId') sessionId?: string,
+    @Headers('x-busbuddy-user-id') actorUserId?: string,
+    @Headers('x-busbuddy-session-version') actorSessionVersion?: string,
+  ) {
+    return this.billingService.syncCheckoutSessionById(
+      sessionId,
       actorUserId,
       actorSessionVersion,
     );

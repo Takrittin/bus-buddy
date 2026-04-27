@@ -188,16 +188,19 @@ http://localhost:3001
 - `GET /eta?stopId=stop_siam`
 - `GET /billing/me`
 - `POST /billing/checkout-session`
+- `POST /billing/checkout-session/sync`
 - `POST /billing/customer-portal`
 - `POST /billing/stripe/webhook`
 
 ## Premium Billing
 
-Configure these environment variables before testing live payment flows:
+BusBuddy Premium uses Stripe Checkout in subscription mode. Configure these environment variables before testing live Stripe payment flows:
 
 ```env
 STRIPE_SECRET_KEY="sk_test_..."
-STRIPE_PREMIUM_PRICE_ID="price_..."
+STRIPE_PREMIUM_PRICE_ID="price_..." # optional; inline monthly price is used when omitted
+STRIPE_PREMIUM_CURRENCY="thb"
+PREMIUM_MONTHLY_PRICE_THB="99"
 STRIPE_WEBHOOK_SECRET="whsec_..."
 ```
 

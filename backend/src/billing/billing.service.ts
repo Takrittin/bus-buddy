@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ForbiddenException,
+  HttpException,
   Injectable,
   Logger,
   ServiceUnavailableException,
@@ -18,6 +19,12 @@ type StripeCheckoutSession = Awaited<
 type StripeSubscription = Awaited<
   ReturnType<StripeClient['subscriptions']['retrieve']>
 >;
+type StripeCheckoutSessionCreateParams = NonNullable<
+  Parameters<StripeClient['checkout']['sessions']['create']>[0]
+>;
+type StripeCheckoutLineItem = NonNullable<
+  StripeCheckoutSessionCreateParams['line_items']
+>[number];
 type StripeSubscriptionStatus = StripeSubscription['status'];
 
 const STRIPE_API_VERSION = '2026-04-22.dahlia';
@@ -58,35 +65,38 @@ export class BillingService {
       actorUserId,
       actorSessionVersion,
     );
-    const priceId = this.getPremiumPriceId();
-    const stripe = this.getStripeClient();
-    const customerId = await this.getOrCreateStripeCustomer(actor.id);
-    const appUrl = this.getAppUrl();
+    let session: Awaited<
+      ReturnType<StripeClient['checkout']['sessions']['create']>
+    >;
 
-    const session = await stripe.checkout.sessions.create({
-      mode: 'subscription',
-      customer: customerId,
-      client_reference_id: actor.id,
-      line_items: [
-        {
-          price: priceId,
-          quantity: 1,
-        },
-      ],
-      allow_promotion_codes: true,
-      metadata: {
-        userId: actor.id,
-        plan: 'premium',
-      },
-      subscription_data: {
+    try {
+      const stripe = this.getStripeClient();
+      const customerId = await this.getOrCreateStripeCustomer(actor.id);
+      const appUrl = this.getAppUrl();
+
+      session = await stripe.checkout.sessions.create({
+        mode: 'subscription',
+        customer: customerId,
+        payment_method_types: ['card'],
+        client_reference_id: actor.id,
+        line_items: [this.getPremiumCheckoutLineItem()],
+        allow_promotion_codes: true,
         metadata: {
           userId: actor.id,
           plan: 'premium',
         },
-      },
-      success_url: `${appUrl}/premium?checkout=success`,
-      cancel_url: `${appUrl}/premium?checkout=cancelled`,
-    });
+        subscription_data: {
+          metadata: {
+            userId: actor.id,
+            plan: 'premium',
+          },
+        },
+        success_url: `${appUrl}/premium?checkout=success&session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${appUrl}/premium?checkout=cancelled`,
+      });
+    } catch (error) {
+      throw this.toBillingException(error, 'Unable to start Stripe Checkout.');
+    }
 
     if (!session.url) {
       throw new ServiceUnavailableException(
@@ -98,6 +108,55 @@ export class BillingService {
       sessionId: session.id,
       url: session.url,
     };
+  }
+
+  async syncCheckoutSessionById(
+    sessionId?: string | null,
+    actorUserId?: string | null,
+    actorSessionVersion?: string | number | null,
+  ) {
+    if (!sessionId) {
+      throw new BadRequestException('Stripe Checkout Session ID is required.');
+    }
+
+    const actor = await resolveRequestActor(
+      this.prisma,
+      actorUserId,
+      actorSessionVersion,
+    );
+    let session: StripeCheckoutSession;
+
+    try {
+      session = await this.getStripeClient().checkout.sessions.retrieve(
+        sessionId,
+      );
+    } catch (error) {
+      throw this.toBillingException(
+        error,
+        'Unable to load Stripe Checkout Session.',
+      );
+    }
+
+    const sessionUserId = session.client_reference_id ?? session.metadata?.userId;
+
+    if (sessionUserId !== actor.id) {
+      throw new ForbiddenException(
+        'This Stripe Checkout Session does not belong to the current user.',
+      );
+    }
+
+    if (session.payment_status !== 'paid') {
+      throw new BadRequestException(
+        'Stripe Checkout Session has not completed payment yet.',
+      );
+    }
+
+    await this.syncCheckoutSession(session);
+    const subscription = await this.prisma.premiumSubscription.findUnique({
+      where: { userId: actor.id },
+    });
+
+    return this.toBillingStatusResponse(subscription);
   }
 
   async createCustomerPortalSession(
@@ -113,15 +172,29 @@ export class BillingService {
       where: { id: actor.id },
       select: { stripeCustomerId: true },
     });
+    const stripeCustomerId = user?.stripeCustomerId ?? null;
 
-    if (!user?.stripeCustomerId) {
-      throw new BadRequestException('No Stripe customer exists for this account.');
+    if (!this.isStripeCustomerId(stripeCustomerId)) {
+      throw new BadRequestException(
+        'No Stripe customer exists for this account.',
+      );
     }
 
-    const session = await this.getStripeClient().billingPortal.sessions.create({
-      customer: user.stripeCustomerId,
-      return_url: `${this.getAppUrl()}/premium`,
-    });
+    let session: Awaited<
+      ReturnType<StripeClient['billingPortal']['sessions']['create']>
+    >;
+
+    try {
+      session = await this.getStripeClient().billingPortal.sessions.create({
+        customer: stripeCustomerId,
+        return_url: `${this.getAppUrl()}/premium`,
+      });
+    } catch (error) {
+      throw this.toBillingException(
+        error,
+        'Unable to open the Stripe customer portal.',
+      );
+    }
 
     return {
       url: session.url,
@@ -290,7 +363,7 @@ export class BillingService {
     });
   }
 
-  private async getOrCreateStripeCustomer(userId: string) {
+  private async getOrCreateStripeCustomer(userId: string): Promise<string> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: {
@@ -305,17 +378,53 @@ export class BillingService {
       throw new BadRequestException('User account was not found.');
     }
 
-    if (user.stripeCustomerId) {
-      return user.stripeCustomerId;
+    if (this.isStripeCustomerId(user.stripeCustomerId)) {
+      try {
+        const customer = await this.getStripeClient().customers.retrieve(
+          user.stripeCustomerId,
+        );
+
+        if (!('deleted' in customer && customer.deleted)) {
+          return user.stripeCustomerId;
+        }
+
+        this.logger.warn(
+          `Stripe customer ${user.stripeCustomerId} was deleted; creating a new one for user ${user.id}.`,
+        );
+      } catch (error) {
+        if (!this.isMissingStripeResource(error)) {
+          throw this.toBillingException(
+            error,
+            'Unable to verify Stripe customer.',
+          );
+        }
+
+        this.logger.warn(
+          `Stripe customer ${user.stripeCustomerId} was not found; creating a new one for user ${user.id}.`,
+        );
+      }
+    } else if (user.stripeCustomerId) {
+      this.logger.warn(
+        `Ignoring stale non-Stripe customer ID ${user.stripeCustomerId} for user ${user.id}.`,
+      );
     }
 
-    const customer = await this.getStripeClient().customers.create({
-      email: user.email,
-      name: user.name ?? undefined,
-      metadata: {
-        userId: user.id,
-      },
-    });
+    let customer: Awaited<ReturnType<StripeClient['customers']['create']>>;
+
+    try {
+      customer = await this.getStripeClient().customers.create({
+        email: user.email,
+        name: user.name ?? undefined,
+        metadata: {
+          userId: user.id,
+        },
+      });
+    } catch (error) {
+      throw this.toBillingException(
+        error,
+        'Unable to create Stripe customer.',
+      );
+    }
 
     await this.prisma.user.update({
       where: { id: user.id },
@@ -338,6 +447,7 @@ export class BillingService {
     subscription:
       | {
           status: PremiumSubscriptionStatus;
+          stripeSubscriptionId?: string | null;
           currentPeriodEnd: Date | null;
           cancelAtPeriodEnd: boolean;
           trialEndsAt: Date | null;
@@ -357,11 +467,16 @@ export class BillingService {
     subscription:
       | {
           status: PremiumSubscriptionStatus;
+          stripeSubscriptionId?: string | null;
           currentPeriodEnd: Date | null;
         }
       | null,
   ) {
-    if (!subscription || !PREMIUM_ACTIVE_STATUSES.includes(subscription.status)) {
+    if (
+      !subscription ||
+      !PREMIUM_ACTIVE_STATUSES.includes(subscription.status) ||
+      subscription.stripeSubscriptionId?.startsWith('qr_')
+    ) {
       return false;
     }
 
@@ -372,16 +487,38 @@ export class BillingService {
     return subscription.currentPeriodEnd.getTime() > Date.now();
   }
 
-  private getPremiumPriceId() {
+  private getPremiumCheckoutLineItem(): StripeCheckoutLineItem {
     const priceId = process.env.STRIPE_PREMIUM_PRICE_ID;
 
-    if (!priceId) {
-      throw new ServiceUnavailableException(
-        'Stripe premium price ID is not configured.',
-      );
+    if (priceId) {
+      return {
+        price: priceId,
+        quantity: 1,
+      };
     }
 
-    return priceId;
+    return {
+      price_data: {
+        currency: (process.env.STRIPE_PREMIUM_CURRENCY ?? 'thb').toLowerCase(),
+        product_data: {
+          name: 'BusBuddy Premium',
+          description:
+            'Full AI assistant, multiple alerts, unlimited favorites, and advanced trip planning.',
+        },
+        recurring: {
+          interval: 'month',
+        },
+        unit_amount: this.getPremiumMonthlyUnitAmount(),
+      },
+      quantity: 1,
+    };
+  }
+
+  private getPremiumMonthlyUnitAmount() {
+    const amountThb = Number(process.env.PREMIUM_MONTHLY_PRICE_THB ?? 99);
+    const safeAmountThb =
+      Number.isFinite(amountThb) && amountThb > 0 ? amountThb : 99;
+    return Math.round(safeAmountThb * 100);
   }
 
   private getStripeClient() {
@@ -406,6 +543,56 @@ export class BillingService {
 
   private getAppUrl() {
     return (process.env.WEB_URL ?? 'http://localhost:3000').replace(/\/$/, '');
+  }
+
+  private isStripeCustomerId(customerId?: string | null): customerId is string {
+    return Boolean(customerId?.startsWith('cus_'));
+  }
+
+  private isMissingStripeResource(error: unknown) {
+    return (
+      this.getStripeErrorCode(error) === 'resource_missing' ||
+      this.getErrorMessage(error).toLowerCase().includes('no such customer')
+    );
+  }
+
+  private toBillingException(error: unknown, fallbackMessage: string) {
+    if (error instanceof HttpException) {
+      return error;
+    }
+
+    const message = this.getErrorMessage(error) || fallbackMessage;
+    const type = this.getStripeErrorType(error);
+
+    this.logger.error(message);
+
+    if (type === 'StripeAuthenticationError') {
+      return new ServiceUnavailableException(
+        'Stripe authentication failed. Check STRIPE_SECRET_KEY.',
+      );
+    }
+
+    if (type === 'StripeConnectionError' || type === 'StripeAPIError') {
+      return new ServiceUnavailableException(message);
+    }
+
+    return new BadRequestException(message);
+  }
+
+  private getStripeErrorType(error: unknown) {
+    return typeof error === 'object' && error && 'type' in error
+      ? String(error.type)
+      : '';
+  }
+
+  private getStripeErrorCode(error: unknown) {
+    return typeof error === 'object' && error && 'code' in error
+      ? String(error.code)
+      : '';
+  }
+
+  private getErrorMessage(error: unknown) {
+    return error instanceof Error ? error.message : '';
   }
 
   private getId(value: string | { id: string } | null | undefined) {

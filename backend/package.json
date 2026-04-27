@@ -6,6 +6,7 @@
   "scripts": {
     "build": "nest build",
     "check": "tsc -p tsconfig.json --noEmit",
+    "billing:sync-schema": "node scripts/sync-billing-schema.js",
     "start": "nest start",
     "start:dev": "nest start --watch",
     "test": "echo \"Error: no test specified\" && exit 1"
