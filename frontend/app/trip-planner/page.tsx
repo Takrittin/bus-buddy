@@ -10,8 +10,10 @@ import { getTripPlan } from "@/services/insights";
 import { Location, Stop } from "@/types/bus";
 import { TripPlanOption, TripPlannerResult } from "@/types/insights";
 import { saveTripPreview } from "@/lib/trip-preview";
-import { BusFront, LocateFixed, Map as MapIcon, MapPin, Navigation, Route } from "lucide-react";
+import { BusFront, LocateFixed, LockKeyhole, Map as MapIcon, MapPin, Navigation, Route } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
+import { useAuth } from "@/hooks/auth/useAuth";
+import { useBillingStatus } from "@/hooks/useBillingStatus";
 
 const CURRENT_LOCATION_VALUE = "__current_location__";
 const DEFAULT_BANGKOK_CENTER: Location = { lat: 13.7457, lng: 100.5347 };
@@ -19,6 +21,8 @@ const DEFAULT_BANGKOK_CENTER: Location = { lat: 13.7457, lng: 100.5347 };
 export default function TripPlannerPage() {
   const { t } = useLanguage();
   const router = useRouter();
+  const { isAuthenticated, isLoading: isAuthLoading } = useAuth();
+  const { isPremium, isBillingLoading } = useBillingStatus();
   const [stops, setStops] = useState<Stop[]>([]);
   const [originStopId, setOriginStopId] = useState(CURRENT_LOCATION_VALUE);
   const [destinationStopId, setDestinationStopId] = useState("");
@@ -111,6 +115,20 @@ export default function TripPlannerPage() {
   }, [requestCurrentLocation]);
 
   const handlePlanTrip = useCallback(async () => {
+    if (isAuthLoading || isBillingLoading) {
+      return;
+    }
+
+    if (!isAuthenticated) {
+      router.push("/settings?mode=login");
+      return;
+    }
+
+    if (!isPremium) {
+      router.push("/premium");
+      return;
+    }
+
     if (!originLocation || !destinationStop) {
       return;
     }
@@ -128,7 +146,7 @@ export default function TripPlannerPage() {
     } finally {
       setIsPlanningTrip(false);
     }
-  }, [destinationStop, originLocation]);
+  }, [destinationStop, isAuthLoading, isAuthenticated, isBillingLoading, isPremium, originLocation, router]);
 
   const handlePreviewPlan = useCallback(
     (plan: TripPlanOption) => {
@@ -234,7 +252,7 @@ export default function TripPlannerPage() {
                 <Button
                   type="button"
                   variant="primary"
-                  disabled={!destinationStop || !originLocation}
+                  disabled={!destinationStop || !originLocation || isAuthLoading || isBillingLoading}
                   isLoading={isPlanningTrip}
                   onClick={handlePlanTrip}
                   className="h-12 rounded-2xl px-6"
@@ -245,7 +263,25 @@ export default function TripPlannerPage() {
             </section>
 
             <section className="mt-5 grid gap-4">
-              {tripPlan ? (
+              {!isAuthLoading && !isBillingLoading && (!isAuthenticated || !isPremium) ? (
+                <div className="rounded-[2rem] border border-orange-100 bg-white p-8 text-center shadow-sm">
+                  <LockKeyhole className="mx-auto h-12 w-12 text-brand" />
+                  <h2 className="mt-4 text-2xl font-black text-gray-950">
+                    {t("home.tripPlannerPremiumTitle")}
+                  </h2>
+                  <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-gray-600">
+                    {t("home.tripPlannerPremiumDescription")}
+                  </p>
+                  <Button
+                    type="button"
+                    variant="primary"
+                    onClick={() => router.push(isAuthenticated ? "/premium" : "/settings?mode=login")}
+                    className="mt-5 rounded-2xl"
+                  >
+                    {isAuthenticated ? t("premium.getPremium") : t("common.signIn")}
+                  </Button>
+                </div>
+              ) : tripPlan ? (
                 tripPlan.plans.length === 0 ? (
                   <div className="rounded-[2rem] border border-gray-100 bg-white p-8 text-center text-gray-500 shadow-sm">
                     {t("home.noTripPlanWithTransfer")}

@@ -26,12 +26,16 @@ type StripeCheckoutLineItem = NonNullable<
   StripeCheckoutSessionCreateParams['line_items']
 >[number];
 type StripeSubscriptionStatus = StripeSubscription['status'];
+type PremiumCheckoutPlan = 'tourist_weekly' | 'monthly';
 
 const STRIPE_API_VERSION = '2026-04-22.dahlia';
 const PREMIUM_ACTIVE_STATUSES: PremiumSubscriptionStatus[] = [
   'ACTIVE',
   'TRIALING',
 ];
+const TOURIST_WEEKLY_PLAN: PremiumCheckoutPlan = 'tourist_weekly';
+const MONTHLY_PLAN: PremiumCheckoutPlan = 'monthly';
+const TOURIST_WEEKLY_DAYS = 7;
 
 @Injectable()
 export class BillingService {
@@ -57,6 +61,7 @@ export class BillingService {
   }
 
   async createCheckoutSession(
+    requestedPlan?: string | null,
     actorUserId?: string | null,
     actorSessionVersion?: string | number | null,
   ) {
@@ -65,6 +70,17 @@ export class BillingService {
       actorUserId,
       actorSessionVersion,
     );
+    const plan = this.normalizeCheckoutPlan(requestedPlan);
+    const currentSubscription = await this.prisma.premiumSubscription.findUnique({
+      where: { userId: actor.id },
+    });
+
+    if (this.isPremiumSubscription(currentSubscription)) {
+      throw new BadRequestException(
+        'This account already has an active Premium plan.',
+      );
+    }
+
     let session: Awaited<
       ReturnType<StripeClient['checkout']['sessions']['create']>
     >;
@@ -75,22 +91,34 @@ export class BillingService {
       const appUrl = this.getAppUrl();
 
       session = await stripe.checkout.sessions.create({
-        mode: 'subscription',
+        mode: plan === TOURIST_WEEKLY_PLAN ? 'payment' : 'subscription',
         customer: customerId,
         payment_method_types: ['card'],
         client_reference_id: actor.id,
-        line_items: [this.getPremiumCheckoutLineItem()],
+        line_items: [this.getPremiumCheckoutLineItem(plan)],
         allow_promotion_codes: true,
         metadata: {
           userId: actor.id,
-          plan: 'premium',
+          plan,
         },
-        subscription_data: {
-          metadata: {
-            userId: actor.id,
-            plan: 'premium',
-          },
-        },
+        subscription_data:
+          plan === MONTHLY_PLAN
+            ? {
+                metadata: {
+                  userId: actor.id,
+                  plan,
+                },
+              }
+            : undefined,
+        payment_intent_data:
+          plan === TOURIST_WEEKLY_PLAN
+            ? {
+                metadata: {
+                  userId: actor.id,
+                  plan,
+                },
+              }
+            : undefined,
         success_url: `${appUrl}/premium?checkout=success&session_id={CHECKOUT_SESSION_ID}`,
         cancel_url: `${appUrl}/premium?checkout=cancelled`,
       });
@@ -283,10 +311,13 @@ export class BillingService {
     const subscriptionId = this.getId(session.subscription);
 
     if (!subscriptionId) {
-      this.logger.warn(
-        `Ignoring Checkout Session ${session.id} without a subscription.`,
-      );
-      return;
+      if (session.payment_status === 'paid') {
+        await this.grantTouristWeeklyPass(session);
+        return;
+      }
+
+      this.logger.warn(`Ignoring unpaid Checkout Session ${session.id}.`);
+      return null;
     }
 
     const subscription = await this.getStripeClient().subscriptions.retrieve(
@@ -295,6 +326,87 @@ export class BillingService {
     await this.syncSubscription(subscription, {
       userId: session.client_reference_id ?? session.metadata?.userId,
       customerId: this.getId(session.customer),
+    });
+  }
+
+  private async grantTouristWeeklyPass(session: StripeCheckoutSession) {
+    const plan = this.normalizeCheckoutPlan(session.metadata?.plan);
+
+    if (plan !== TOURIST_WEEKLY_PLAN) {
+      this.logger.warn(
+        `Ignoring one-time Checkout Session ${session.id} for unsupported plan ${session.metadata?.plan ?? 'unknown'}.`,
+      );
+      return null;
+    }
+
+    const customerId = this.getId(session.customer);
+
+    if (!customerId) {
+      this.logger.warn(
+        `Ignoring weekly pass Checkout Session ${session.id} without a customer.`,
+      );
+      return null;
+    }
+
+    const userId =
+      session.client_reference_id ??
+      session.metadata?.userId ??
+      (await this.findUserIdByStripeCustomer(customerId));
+
+    if (!userId) {
+      this.logger.warn(
+        `Ignoring weekly pass Checkout Session ${session.id}; no BusBuddy user found.`,
+      );
+      return null;
+    }
+
+    const now = new Date();
+    const existingSubscription = await this.prisma.premiumSubscription.findUnique({
+      where: { userId },
+    });
+    const baseStart =
+      existingSubscription?.currentPeriodEnd &&
+      existingSubscription.currentPeriodEnd.getTime() > now.getTime()
+        ? existingSubscription.currentPeriodEnd
+        : now;
+    const currentPeriodEnd = new Date(
+      baseStart.getTime() + TOURIST_WEEKLY_DAYS * 24 * 60 * 60 * 1000,
+    );
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { stripeCustomerId: customerId },
+    });
+
+    return this.prisma.premiumSubscription.upsert({
+      where: { userId },
+      update: {
+        stripeCustomerId: customerId,
+        stripeSubscriptionId: `weekly_${session.id}`,
+        stripePriceId: TOURIST_WEEKLY_PLAN,
+        status: 'ACTIVE',
+        currentPeriodStart: now,
+        currentPeriodEnd,
+        trialEndsAt: null,
+        cancelAtPeriodEnd: false,
+        canceledAt: null,
+        latestInvoiceId: this.getId(session.payment_intent),
+        latestPaymentStatus: session.payment_status,
+      },
+      create: {
+        userId,
+        stripeCustomerId: customerId,
+        stripeSubscriptionId: `weekly_${session.id}`,
+        stripePriceId: TOURIST_WEEKLY_PLAN,
+        status: 'ACTIVE',
+        currentPeriodStart: now,
+        currentPeriodEnd,
+        trialEndsAt: null,
+        cancelAtPeriodEnd: false,
+        canceledAt: null,
+        latestInvoiceId: this.getId(session.payment_intent),
+        latestPaymentStatus: session.payment_status,
+      },
     });
   }
 
@@ -448,15 +560,19 @@ export class BillingService {
       | {
           status: PremiumSubscriptionStatus;
           stripeSubscriptionId?: string | null;
+          stripePriceId?: string | null;
           currentPeriodEnd: Date | null;
           cancelAtPeriodEnd: boolean;
           trialEndsAt: Date | null;
         }
       | null,
   ) {
+    const plan = this.getPremiumPlan(subscription);
+
     return {
       isPremium: this.isPremiumSubscription(subscription),
       status: subscription?.status ?? null,
+      plan,
       currentPeriodEnd: subscription?.currentPeriodEnd?.toISOString() ?? null,
       cancelAtPeriodEnd: subscription?.cancelAtPeriodEnd ?? false,
       trialEndsAt: subscription?.trialEndsAt?.toISOString() ?? null,
@@ -487,8 +603,37 @@ export class BillingService {
     return subscription.currentPeriodEnd.getTime() > Date.now();
   }
 
-  private getPremiumCheckoutLineItem(): StripeCheckoutLineItem {
-    const priceId = process.env.STRIPE_PREMIUM_PRICE_ID;
+  private getPremiumPlan(
+    subscription:
+      | {
+          stripeSubscriptionId?: string | null;
+          stripePriceId?: string | null;
+        }
+      | null,
+  ): PremiumCheckoutPlan | 'unknown' | null {
+    if (!subscription) {
+      return null;
+    }
+
+    if (
+      subscription.stripePriceId === TOURIST_WEEKLY_PLAN ||
+      subscription.stripeSubscriptionId?.startsWith('weekly_')
+    ) {
+      return TOURIST_WEEKLY_PLAN;
+    }
+
+    if (subscription.stripeSubscriptionId?.startsWith('sub_')) {
+      return MONTHLY_PLAN;
+    }
+
+    return subscription.stripePriceId ? 'unknown' : null;
+  }
+
+  private getPremiumCheckoutLineItem(plan: PremiumCheckoutPlan): StripeCheckoutLineItem {
+    const priceId =
+      plan === TOURIST_WEEKLY_PLAN
+        ? process.env.STRIPE_TOURIST_WEEKLY_PRICE_ID
+        : process.env.STRIPE_PREMIUM_PRICE_ID;
 
     if (priceId) {
       return {
@@ -501,23 +646,45 @@ export class BillingService {
       price_data: {
         currency: (process.env.STRIPE_PREMIUM_CURRENCY ?? 'thb').toLowerCase(),
         product_data: {
-          name: 'BusBuddy Premium',
+          name:
+            plan === TOURIST_WEEKLY_PLAN
+              ? 'BusBuddy Tourist Premium Pass'
+              : 'BusBuddy Premium Monthly',
           description:
-            'Full AI assistant, multiple alerts, unlimited favorites, and advanced trip planning.',
+            plan === TOURIST_WEEKLY_PLAN
+              ? 'A 7-day Premium pass for visitors traveling around Thailand.'
+              : 'Full AI assistant, multiple alerts, unlimited favorites, and advanced trip planning.',
         },
-        recurring: {
-          interval: 'month',
-        },
-        unit_amount: this.getPremiumMonthlyUnitAmount(),
+        recurring:
+          plan === MONTHLY_PLAN
+            ? {
+                interval: 'month',
+              }
+            : undefined,
+        unit_amount:
+          plan === TOURIST_WEEKLY_PLAN
+            ? this.getPremiumWeeklyUnitAmount()
+            : this.getPremiumMonthlyUnitAmount(),
       },
       quantity: 1,
     };
+  }
+
+  private normalizeCheckoutPlan(plan?: string | null): PremiumCheckoutPlan {
+    return plan === TOURIST_WEEKLY_PLAN ? TOURIST_WEEKLY_PLAN : MONTHLY_PLAN;
   }
 
   private getPremiumMonthlyUnitAmount() {
     const amountThb = Number(process.env.PREMIUM_MONTHLY_PRICE_THB ?? 99);
     const safeAmountThb =
       Number.isFinite(amountThb) && amountThb > 0 ? amountThb : 99;
+    return Math.round(safeAmountThb * 100);
+  }
+
+  private getPremiumWeeklyUnitAmount() {
+    const amountThb = Number(process.env.PREMIUM_WEEKLY_PRICE_THB ?? 39);
+    const safeAmountThb =
+      Number.isFinite(amountThb) && amountThb > 0 ? amountThb : 39;
     return Math.round(safeAmountThb * 100);
   }
 

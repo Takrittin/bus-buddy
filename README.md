@@ -26,6 +26,7 @@ GOOGLE_AI_MODEL="gemini-2.5-flash"
 STRIPE_SECRET_KEY="your_stripe_secret_key"
 STRIPE_PREMIUM_CURRENCY="thb"
 PREMIUM_MONTHLY_PRICE_THB="99"
+PREMIUM_WEEKLY_PRICE_THB="39"
 ```
 
 สร้างไฟล์ `frontend/.env.local`

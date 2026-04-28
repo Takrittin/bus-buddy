@@ -1,4 +1,5 @@
 import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { BillingService } from "../billing/billing.service";
 import { resolveRequestActor } from "../common/request-actor";
 import { PrismaService } from "../prisma/prisma.service";
 import { CreateUserDto } from "./dto/create-user.dto";
@@ -42,7 +43,10 @@ type SubscriptionWithRelations = {
 
 @Injectable()
 export class UsersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly billingService: BillingService,
+  ) {}
 
   async create(createUserDto: CreateUserDto) {
     const {
@@ -157,7 +161,7 @@ export class UsersService {
     actorUserId?: string | null,
     actorSessionVersion?: string | null,
   ) {
-    await this.ensureUserAccess(userId, actorUserId, actorSessionVersion);
+    await this.ensurePremiumUserAccess(userId, actorUserId, actorSessionVersion);
 
     const favorites = await this.prisma.favoriteStop.findMany({
       where: { userId },
@@ -195,7 +199,7 @@ export class UsersService {
     actorSessionVersion?: string | null,
   ) {
     await Promise.all([
-      this.ensureUserAccess(userId, actorUserId, actorSessionVersion),
+      this.ensurePremiumUserAccess(userId, actorUserId, actorSessionVersion),
       this.ensureStopExists(stopId),
     ]);
 
@@ -247,7 +251,7 @@ export class UsersService {
     actorUserId?: string | null,
     actorSessionVersion?: string | null,
   ) {
-    await this.ensureUserAccess(userId, actorUserId, actorSessionVersion);
+    await this.ensurePremiumUserAccess(userId, actorUserId, actorSessionVersion);
 
     await this.prisma.favoriteStop.deleteMany({
       where: {
@@ -262,7 +266,7 @@ export class UsersService {
     actorUserId?: string | null,
     actorSessionVersion?: string | null,
   ) {
-    await this.ensureUserAccess(userId, actorUserId, actorSessionVersion);
+    await this.ensurePremiumUserAccess(userId, actorUserId, actorSessionVersion);
 
     const subscriptions = await this.prisma.notificationSubscription.findMany({
       where: {
@@ -296,7 +300,7 @@ export class UsersService {
     actorUserId?: string | null,
     actorSessionVersion?: string | null,
   ) {
-    await this.ensureUserAccess(userId, actorUserId, actorSessionVersion);
+    await this.ensurePremiumUserAccess(userId, actorUserId, actorSessionVersion);
 
     const subscription = await this.prisma.notificationSubscription.findFirst({
       where: {
@@ -345,7 +349,7 @@ export class UsersService {
     } = input;
 
     await Promise.all([
-      this.ensureUserAccess(userId, actorUserId, actorSessionVersion),
+      this.ensurePremiumUserAccess(userId, actorUserId, actorSessionVersion),
       this.ensureStopExists(stopId),
       this.ensureRouteExists(routeId),
     ]);
@@ -392,7 +396,7 @@ export class UsersService {
     actorUserId?: string | null,
     actorSessionVersion?: string | null,
   ) {
-    await this.ensureUserAccess(userId, actorUserId, actorSessionVersion);
+    await this.ensurePremiumUserAccess(userId, actorUserId, actorSessionVersion);
 
     await this.prisma.notificationSubscription.deleteMany({
       where: {
@@ -447,6 +451,22 @@ export class UsersService {
 
     if (actor.id !== userId && actor.role !== "ADMIN") {
       throw new ForbiddenException("You cannot access another user's data.");
+    }
+  }
+
+  private async ensurePremiumUserAccess(
+    userId: string,
+    actorUserId?: string | null,
+    actorSessionVersion?: string | null,
+  ) {
+    await this.ensureUserAccess(userId, actorUserId, actorSessionVersion);
+    const actor = await this.billingService.assertPremiumAccess(
+      actorUserId,
+      actorSessionVersion,
+    );
+
+    if (actor.role === "FLEET") {
+      throw new ForbiddenException("Rider Premium access is required.");
     }
   }
 

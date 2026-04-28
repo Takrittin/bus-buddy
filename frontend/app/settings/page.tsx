@@ -6,10 +6,11 @@ import { AppHeader } from "@/components/navigation/AppHeader";
 import { BottomNav } from "@/components/navigation/BottomNav";
 import { Button } from "@/components/ui/Button";
 import { useAuth } from "@/hooks/auth/useAuth";
+import { useBillingStatus } from "@/hooks/useBillingStatus";
 import { canAccessAdmin, canAccessFleet, formatUserRole } from "@/lib/auth/roles";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { UserRole } from "@/types/auth";
-import { BusFront, LogIn, LogOut, Settings, Shield, UserPlus } from "lucide-react";
+import { BusFront, CalendarClock, Crown, LogIn, LogOut, Settings, Shield, UserPlus } from "lucide-react";
 
 type AuthMode = "login" | "register";
 const REGISTERABLE_ROLES: UserRole[] = ["USER", "FLEET", "ADMIN"];
@@ -28,10 +29,25 @@ export default function SettingsPage() {
   const [nextPassword, setNextPassword] = useState("");
   const [passwordMessage, setPasswordMessage] = useState<string | null>(null);
   const { user, isAuthenticated, isLoading, login, logout, register, changePassword } = useAuth();
+  const { billingStatus, isBillingLoading } = useBillingStatus();
   const { locale, setLocale, t } = useLanguage();
   const roleLabel = formatUserRole(user?.role, locale);
   const showAdminShortcut = canAccessAdmin(user?.role);
   const showFleetShortcut = canAccessFleet(user?.role) && !showAdminShortcut;
+  const planLabel =
+    billingStatus?.isPremium && billingStatus.plan === "tourist_weekly"
+      ? t("premium.touristPlan")
+      : billingStatus?.isPremium && billingStatus.plan === "monthly"
+        ? t("premium.monthlyPlan")
+        : billingStatus?.isPremium
+          ? t("premium.premiumPlan")
+          : t("premium.freePlan");
+  const planExpiryLabel = billingStatus?.currentPeriodEnd
+    ? new Date(billingStatus.currentPeriodEnd).toLocaleDateString(
+        locale === "th" ? "th-TH" : "en-US",
+        { year: "numeric", month: "short", day: "numeric" },
+      )
+    : null;
 
   useEffect(() => {
     setMode(initialMode);
@@ -176,9 +192,57 @@ export default function SettingsPage() {
                     ) : null}
                   </div>
 
-                  <div className="rounded-2xl border border-green-100 bg-green-50 px-4 py-3 text-sm text-green-800">
-                    {t("settings.favoritesEnabled")}
-                  </div>
+                  {user.role === "USER" ? (
+                    <div
+                      className={`rounded-2xl border px-4 py-3 text-sm ${
+                        billingStatus?.isPremium
+                          ? "border-green-100 bg-green-50 text-green-800"
+                          : "border-amber-100 bg-amber-50 text-amber-800"
+                      }`}
+                    >
+                      {isBillingLoading
+                        ? t("common.loading")
+                        : billingStatus?.isPremium
+                          ? t("settings.premiumFeaturesEnabled")
+                          : t("settings.premiumFeaturesLocked")}
+                    </div>
+                  ) : null}
+
+                  {user.role === "USER" ? (
+                    <div className="rounded-2xl border border-orange-100 bg-orange-50 px-4 py-4 text-sm text-orange-900">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="flex items-start gap-3">
+                          <div className="rounded-2xl bg-white p-2 text-brand">
+                            <Crown className="h-5 w-5" />
+                          </div>
+                          <div>
+                            <p className="font-black text-gray-950">
+                              {t("settings.membershipPlan")}
+                            </p>
+                            <p className="mt-1 text-sm text-gray-600">
+                              {isBillingLoading ? t("common.loading") : planLabel}
+                            </p>
+                            {billingStatus?.isPremium && planExpiryLabel ? (
+                              <p className="mt-1 inline-flex items-center text-xs font-semibold text-orange-800">
+                                <CalendarClock className="mr-1.5 h-3.5 w-3.5" />
+                                {t("settings.premiumExpires", { date: planExpiryLabel })}
+                              </p>
+                            ) : null}
+                          </div>
+                        </div>
+                        {!billingStatus?.isPremium && !isBillingLoading ? (
+                          <Button
+                            type="button"
+                            variant="primary"
+                            onClick={() => router.push("/premium")}
+                            className="w-full sm:w-auto"
+                          >
+                            {t("premium.getPremium")}
+                          </Button>
+                        ) : null}
+                      </div>
+                    </div>
+                  ) : null}
 
                   {user.mustResetPassword ? (
                     <div className="rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-800">

@@ -51,13 +51,13 @@ const MAX_VERIFIED_TOOL_RESULT_CHARS = 1600;
 const SMALL_TALK_PATTERN =
   /^(hi|hello|hey|thanks|thank you|ok|okay|สวัสดี|หวัดดี|ขอบคุณ|โอเค|ครับ|ค่ะ|คับ|จ้า)[!.?\s]*$/i;
 const USER_TRIP_QUESTION_PATTERN =
-  /(how\s*(do|can)\s*i\s*get|directions?|go\s*to|travel\s*to|ไป.*(ยังไง|อย่างไร|ทางไหน|ได้ไหม|ได้มั้ย)|ไปที่|อยากไป|เดินทางไป|จาก.+ไป)/i;
+  /(how\s*(do|can)\s*i\s*get|directions?|go\s*to|travel\s*to|wanna\s*(go\s*)?to|want\s*to\s*(go\s*)?to|would\s*like\s*to\s*(go\s*)?to|ไป.*(ยังไง|อย่างไร|ทางไหน|ได้ไหม|ได้มั้ย)|ไปที่|อยากไป|เดินทางไป|จาก.+ไป)/i;
 const THAI_STOP_ALIASES: Record<string, string[]> = {
   stop_bang_kapi: ['บางกะปิ', 'เดอะมอลล์บางกะปิ', 'มอลล์บางกะปิ'],
-  stop_siam: ['สยาม', 'siam paragon', 'พารากอน'],
-  stop_victory_monument: ['อนุสาวรีย์ชัย', 'อนุสาวรีย์ชัยสมรภูมิ'],
-  stop_mochit_bus_terminal: ['หมอชิต', 'ขนส่งหมอชิต'],
-  stop_chatuchak_park: ['จตุจักร', 'สวนจตุจักร', 'mrt จตุจักร'],
+  stop_siam: ['สยาม', 'siam paragon', 'พารากอน', 'siam center', 'siam square'],
+  stop_victory_monument: ['อนุสาวรีย์ชัย', 'อนุสาวรีย์ชัยสมรภูมิ', 'victory'],
+  stop_mochit_bus_terminal: ['หมอชิต', 'ขนส่งหมอชิต', 'mo chit', 'mochit'],
+  stop_chatuchak_park: ['จตุจักร', 'สวนจตุจักร', 'mrt จตุจักร', 'chatuchak', 'jj market'],
   stop_hua_lamphong: ['หัวลำโพง'],
   stop_ratchathewi: ['ราชเทวี'],
   stop_pratunam: ['ประตูน้ำ'],
@@ -67,11 +67,28 @@ const THAI_STOP_ALIASES: Record<string, string[]> = {
   stop_wongwian_yai: ['วงเวียนใหญ่'],
   stop_bang_na: ['บางนา'],
   stop_pak_nam: ['ปากน้ำ'],
-  stop_don_mueang_airport: ['ดอนเมือง', 'สนามบินดอนเมือง'],
-  stop_suvarnabhumi_airport: ['สุวรรณภูมิ', 'สนามบินสุวรรณภูมิ'],
+  stop_don_mueang_airport: [
+    'ดอนเมือง',
+    'สนามบินดอนเมือง',
+    'don mueang',
+    'donmueang',
+    'don muang',
+    'donmuang',
+    'don muaeng',
+    'donmuaeng',
+    'dmk',
+    'dmk airport',
+  ],
+  stop_suvarnabhumi_airport: [
+    'สุวรรณภูมิ',
+    'สนามบินสุวรรณภูมิ',
+    'suvarnabhumi',
+    'suvarnabumi',
+    'bkk airport',
+  ],
   stop_thammasat_rangsit: ['ธรรมศาสตร์รังสิต', 'มธ รังสิต'],
   stop_rangsit_market: ['รังสิต', 'ตลาดรังสิต'],
-  stop_fashion_island: ['แฟชั่นไอส์แลนด์'],
+  stop_fashion_island: ['แฟชั่นไอส์แลนด์', 'fashion island'],
   stop_minburi_market: ['มีนบุรี', 'ตลาดมีนบุรี'],
 };
 

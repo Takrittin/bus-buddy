@@ -28,7 +28,7 @@ import {
   getBillingStatus,
   syncPremiumCheckoutSession,
 } from "@/services/billing";
-import { BillingStatus } from "@/types/billing";
+import { BillingStatus, PremiumCheckoutPlan } from "@/types/billing";
 
 export default function PremiumPage() {
   const router = useRouter();
@@ -91,6 +91,7 @@ export default function PremiumPage() {
     syncPremiumCheckoutSession(sessionId)
       .then((status) => {
         setBillingStatus(status);
+        window.dispatchEvent(new Event("busbuddy.billing.updated"));
         window.history.replaceState(null, "", "/premium");
       })
       .catch((syncError) => {
@@ -105,7 +106,15 @@ export default function PremiumPage() {
       });
   }, [canLoadBilling, hasHandledCheckoutReturn, loadBillingStatus, t]);
 
-  const handleGetPremium = async () => {
+  const premiumExpiryLabel = billingStatus?.currentPeriodEnd
+    ? new Date(billingStatus.currentPeriodEnd).toLocaleDateString(undefined, {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+      })
+    : null;
+
+  const handleGetPremium = async (plan: PremiumCheckoutPlan = "tourist_weekly") => {
     if (isLoading) {
       return;
     }
@@ -124,8 +133,16 @@ export default function PremiumPage() {
 
     try {
       const session = billingStatus?.isPremium
-        ? await createCustomerPortalSession()
-        : await createPremiumCheckoutSession();
+        ? billingStatus.plan === "monthly"
+          ? await createCustomerPortalSession()
+          : null
+        : await createPremiumCheckoutSession(plan);
+
+      if (!session) {
+        setIsStartingCheckout(false);
+        return;
+      }
+
       window.location.assign(session.url);
     } catch (checkoutError) {
       setError(
@@ -139,11 +156,52 @@ export default function PremiumPage() {
     }
   };
 
+  const renderPremiumAction = (plan: PremiumCheckoutPlan) => {
+    const isCurrentPlan = billingStatus?.isPremium && billingStatus.plan === plan;
+
+    if (billingStatus?.isPremium && !isCurrentPlan) {
+      return (
+        <Button
+          type="button"
+          disabled
+          className="mt-5 h-12 w-full rounded-2xl text-base font-black"
+        >
+          {t("premium.alreadyPremium")}
+        </Button>
+      );
+    }
+
+    if (isCurrentPlan && plan === "tourist_weekly") {
+      return (
+        <Button
+          type="button"
+          disabled
+          className="mt-5 h-12 w-full rounded-2xl text-base font-black"
+        >
+          {t("premium.currentPlan")}
+        </Button>
+      );
+    }
+
+    return (
+      <Button
+        type="button"
+        onClick={() => void handleGetPremium(plan)}
+        isLoading={isPrimaryActionLoading}
+        disabled={isLoading || (isAuthenticated && !canUseRiderTools)}
+        className="mt-5 h-12 w-full rounded-2xl text-base font-black"
+      >
+        <CreditCard className="mr-2 h-5 w-5" />
+        {isCurrentPlan ? t("premium.manageSubscription") : t("premium.goToCreditPayment")}
+      </Button>
+    );
+  };
+
   const isPrimaryActionLoading = isStartingCheckout || isLoadingBilling;
   const primaryActionLabel = billingStatus?.isPremium
-    ? t("premium.manageSubscription")
+    ? t("premium.activeTitle")
     : isAuthenticated
-      ? t("premium.payWithCredit")
+      ? t("premium.startTouristPass")
       : t("premium.createAccount");
 
   return (
@@ -175,9 +233,13 @@ export default function PremiumPage() {
                   <div className="mt-6 flex flex-col gap-3 sm:flex-row">
                     <Button
                       type="button"
-                      onClick={handleGetPremium}
+                      onClick={() => void handleGetPremium("tourist_weekly")}
                       isLoading={isPrimaryActionLoading}
-                      disabled={isLoading || (isAuthenticated && !canUseRiderTools)}
+                      disabled={
+                        isLoading ||
+                        billingStatus?.isPremium ||
+                        (isAuthenticated && !canUseRiderTools)
+                      }
                       className="h-12 rounded-2xl px-6 text-base font-black shadow-xl shadow-orange-500/20"
                     >
                       <CreditCard className="mr-2 h-5 w-5" />
@@ -199,7 +261,22 @@ export default function PremiumPage() {
               </div>
             </section>
 
-            <section className="grid gap-4 lg:grid-cols-2">
+            {billingStatus?.isPremium ? (
+              <section className="rounded-[2rem] border border-emerald-100 bg-emerald-50 px-5 py-4 text-sm text-emerald-900 shadow-sm">
+                <p className="font-black">
+                  {billingStatus.plan === "tourist_weekly"
+                    ? t("premium.touristPlanActive")
+                    : t("premium.monthlyPlanActive")}
+                </p>
+                {premiumExpiryLabel ? (
+                  <p className="mt-1">
+                    {t("premium.expiresOn", { date: premiumExpiryLabel })}
+                  </p>
+                ) : null}
+              </section>
+            ) : null}
+
+            <section className="grid gap-4 lg:grid-cols-3">
               <PlanCard
                 eyebrow={t("premium.freePlan")}
                 title={t("premium.freeTitle")}
@@ -214,7 +291,24 @@ export default function PremiumPage() {
 
               <PlanCard
                 isHighlighted
-                eyebrow={t("premium.premiumPlan")}
+                badge={t("premium.touristBadge")}
+                eyebrow={t("premium.touristPlan")}
+                title={t("premium.touristTitle")}
+                price={t("premium.touristPrice")}
+                description={t("premium.touristDescription")}
+                features={[
+                  { icon: <Bot />, text: t("premium.premiumAi") },
+                  { icon: <BellRing />, text: t("premium.premiumAlerts") },
+                  { icon: <Heart />, text: t("premium.premiumFavorites") },
+                  { icon: <Navigation />, text: t("premium.premiumPlanner") },
+                  { icon: <BarChart3 />, text: t("premium.premiumAnalytics") },
+                  { icon: <ShieldCheck />, text: t("premium.premiumNoAds") },
+                ]}
+                action={renderPremiumAction("tourist_weekly")}
+              />
+
+              <PlanCard
+                eyebrow={t("premium.monthlyPlan")}
                 title={t("premium.premiumTitle")}
                 price={t("premium.price")}
                 description={t("premium.premiumDescription")}
@@ -226,20 +320,7 @@ export default function PremiumPage() {
                   { icon: <BarChart3 />, text: t("premium.premiumAnalytics") },
                   { icon: <ShieldCheck />, text: t("premium.premiumNoAds") },
                 ]}
-                action={
-                  <Button
-                    type="button"
-                    onClick={handleGetPremium}
-                    isLoading={isPrimaryActionLoading}
-                    disabled={isLoading || (isAuthenticated && !canUseRiderTools)}
-                    className="mt-5 h-12 w-full rounded-2xl text-base font-black"
-                  >
-                    <CreditCard className="mr-2 h-5 w-5" />
-                    {billingStatus?.isPremium
-                      ? t("premium.manageSubscription")
-                      : t("premium.goToCreditPayment")}
-                  </Button>
-                }
+                action={renderPremiumAction("monthly")}
               />
             </section>
 
@@ -328,6 +409,7 @@ function PremiumSnapshot() {
 }
 
 function PlanCard({
+  badge,
   eyebrow,
   title,
   price,
@@ -336,6 +418,7 @@ function PlanCard({
   isHighlighted,
   action,
 }: {
+  badge?: string;
   eyebrow: string;
   title: string;
   price: string;
@@ -370,7 +453,7 @@ function PlanCard({
           }`}
         >
           <p className="text-xs font-bold uppercase tracking-[0.12em]">
-            {isHighlighted ? "Premium" : "Free"}
+            {badge ?? (isHighlighted ? "Premium" : "Free")}
           </p>
           <p className="text-lg font-black">{price}</p>
         </div>

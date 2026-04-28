@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import React, { useMemo, useState } from "react";
-import { Bot, MessageCircle, SendHorizonal, Sparkles, X } from "lucide-react";
+import { Bot, MessageCircle, SendHorizonal, X } from "lucide-react";
 import { askUserAssistant } from "@/services/ai";
 import { Button } from "@/components/ui/Button";
 import { Location, Stop } from "@/types/bus";
 import { UserAssistantMessage } from "@/types/ai";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { useAuth } from "@/hooks/auth/useAuth";
+import { useBillingStatus } from "@/hooks/useBillingStatus";
 
 const MAX_CLIENT_HISTORY_MESSAGES = 4;
 const MAX_CLIENT_HISTORY_CHARS = 220;
@@ -24,6 +25,7 @@ export function UserAssistantPanel({
 }) {
   const { locale, t } = useLanguage();
   const { isAuthenticated } = useAuth();
+  const { isPremium, isBillingLoading } = useBillingStatus();
   const [isOpen, setIsOpen] = useState(false);
   const [inputValue, setInputValue] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -35,12 +37,8 @@ export function UserAssistantPanel({
       content: t("ai.intro"),
     },
   ]);
-  const suggestions = [
-    t("ai.suggestions.nearestStop"),
-    t("ai.suggestions.fastestRoute"),
-    t("ai.suggestions.bangKapi"),
-  ];
   const premiumError = error?.toLowerCase().includes("premium") ?? false;
+  const isPremiumLocked = !isAuthenticated || (!isBillingLoading && !isPremium);
 
   const conversationHistory = useMemo(() => {
     return messages
@@ -52,10 +50,19 @@ export function UserAssistantPanel({
       }));
   }, [messages]);
 
+  if (isBillingLoading || isPremiumLocked) {
+    return null;
+  }
+
   async function submitMessage(messageText: string) {
     const trimmedMessage = messageText.trim();
 
     if (!trimmedMessage || isLoading) {
+      return;
+    }
+
+    if (isPremiumLocked) {
+      setError(t("ai.premiumRequired"));
       return;
     }
 
@@ -147,7 +154,7 @@ export function UserAssistantPanel({
               </div>
             ) : null}
 
-            {!isAuthenticated ? (
+            {isPremiumLocked ? (
               <div className="rounded-2xl border border-orange-100 bg-orange-50 px-4 py-3 text-sm text-orange-900">
                 <p>{t("ai.premiumRequired")}</p>
                 <Link href="/premium" className="mt-2 inline-flex font-bold text-brand">
@@ -188,20 +195,6 @@ export function UserAssistantPanel({
           </div>
 
           <div className="border-t border-gray-100 px-4 py-4">
-            <div className="mb-3 flex flex-wrap gap-2">
-              {suggestions.map((suggestion) => (
-                <button
-                  key={suggestion}
-                  type="button"
-                  onClick={() => void submitMessage(suggestion)}
-                  className="rounded-full border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs font-medium text-gray-600 transition-colors hover:border-orange-200 hover:bg-orange-50 hover:text-brand"
-                >
-                  <Sparkles className="mr-1 inline h-3 w-3" />
-                  {suggestion}
-                </button>
-              ))}
-            </div>
-
             <form
               onSubmit={(event) => {
                 event.preventDefault();
@@ -221,7 +214,7 @@ export function UserAssistantPanel({
                 variant="primary"
                 size="icon"
                 isLoading={isLoading}
-                disabled={isLoading || inputValue.trim().length === 0}
+                disabled={isLoading || isBillingLoading || isPremiumLocked || inputValue.trim().length === 0}
                 className="rounded-2xl"
               >
                 <SendHorizonal className="h-4 w-4" />

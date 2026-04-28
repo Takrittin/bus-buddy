@@ -1,17 +1,28 @@
-import { Controller, Get, Query } from '@nestjs/common';
+import { Controller, Get, Headers, Query } from '@nestjs/common';
+import { BillingService } from '../billing/billing.service';
 import { InsightsService } from './insights.service';
 
 @Controller('insights')
 export class InsightsController {
-  constructor(private readonly insightsService: InsightsService) {}
+  constructor(
+    private readonly insightsService: InsightsService,
+    private readonly billingService: BillingService,
+  ) {}
 
   @Get('trip-planner')
-  getTripPlan(
+  async getTripPlan(
     @Query('originLat') originLat: string,
     @Query('originLng') originLng: string,
     @Query('destinationLat') destinationLat: string,
     @Query('destinationLng') destinationLng: string,
+    @Headers('x-busbuddy-user-id') actorUserId?: string,
+    @Headers('x-busbuddy-session-version') actorSessionVersion?: string,
   ) {
+    await this.billingService.assertPremiumAccess(
+      actorUserId,
+      actorSessionVersion,
+    );
+
     return this.insightsService.planTrip({
       originLat: Number(originLat),
       originLng: Number(originLng),

@@ -7,6 +7,7 @@ import { BottomNav } from "@/components/navigation/BottomNav";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Button } from "@/components/ui/Button";
 import { useAuth } from "@/hooks/auth/useAuth";
+import { useBillingStatus } from "@/hooks/useBillingStatus";
 import {
   NotificationSubscription,
   getUserSubscriptions,
@@ -27,9 +28,10 @@ export default function AlertsPage() {
     canUseRiderTools,
     isFleetManager,
   } = useAuth();
+  const { isPremium, isBillingLoading } = useBillingStatus();
 
   useEffect(() => {
-    if (isAuthLoading) {
+    if (isAuthLoading || isBillingLoading) {
       return;
     }
 
@@ -41,6 +43,12 @@ export default function AlertsPage() {
       }
 
       if (!canUseRiderTools) {
+        setSubscriptions([]);
+        setIsLoading(false);
+        return;
+      }
+
+      if (!isPremium) {
         setSubscriptions([]);
         setIsLoading(false);
         return;
@@ -58,7 +66,7 @@ export default function AlertsPage() {
     }
 
     void loadSubscriptions();
-  }, [canUseRiderTools, isAuthenticated, isAuthLoading, user?.id]);
+  }, [canUseRiderTools, isAuthenticated, isAuthLoading, isBillingLoading, isPremium, user?.id]);
 
   const handleRemoveSubscription = async (subscriptionId: string) => {
     if (!user?.id) {
@@ -90,7 +98,7 @@ export default function AlertsPage() {
             </section>
 
             <section className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
-              {isLoading ? (
+              {isLoading || isBillingLoading ? (
                 <p className="text-sm text-gray-500">{t("alerts.loading")}</p>
               ) : !isAuthenticated ? (
                 <EmptyState
@@ -117,6 +125,20 @@ export default function AlertsPage() {
                       onClick={() => router.push("/fleet")}
                     >
                       {t("common.openFleetManager")}
+                    </Button>
+                  }
+                />
+              ) : !isPremium ? (
+                <EmptyState
+                  icon={<LockKeyhole className="h-16 w-16 mx-auto" />}
+                  title={t("alerts.premiumTitle")}
+                  description={t("alerts.premiumDescription")}
+                  action={
+                    <Button
+                      variant="primary"
+                      onClick={() => router.push("/premium")}
+                    >
+                      {t("premium.getPremium")}
                     </Button>
                   }
                 />

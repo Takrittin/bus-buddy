@@ -24,10 +24,12 @@ export class BillingController {
 
   @Post('checkout-session')
   createCheckoutSession(
+    @Body('plan') plan?: string,
     @Headers('x-busbuddy-user-id') actorUserId?: string,
     @Headers('x-busbuddy-session-version') actorSessionVersion?: string,
   ) {
     return this.billingService.createCheckoutSession(
+      plan,
       actorUserId,
       actorSessionVersion,
     );

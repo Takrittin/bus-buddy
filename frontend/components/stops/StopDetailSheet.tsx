@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/Button";
 import { Skeleton } from "@/components/ui/LoadingSkeleton";
 import { useETA } from "@/hooks/useETA";
 import { useAuth } from "@/hooks/auth/useAuth";
+import { useBillingStatus } from "@/hooks/useBillingStatus";
 import {
   addFavoriteStop,
   isFavoriteStop,
@@ -63,6 +64,7 @@ export function StopDetailSheet({ stop, crowding, onClose }: StopDetailSheetProp
   const { etas, isLoading, error } = useETA(stop.id);
   const router = useRouter();
   const { user, isAuthenticated, canUseRiderTools, isFleetManager } = useAuth();
+  const { isPremium } = useBillingStatus();
   const [isFavorite, setIsFavorite] = useState(false);
   const [activeSubscriptionId, setActiveSubscriptionId] = useState<string | null>(null);
   const [isSavingFavorite, setIsSavingFavorite] = useState(false);
@@ -73,7 +75,7 @@ export function StopDetailSheet({ stop, crowding, onClose }: StopDetailSheetProp
     let isMounted = true;
 
     async function loadSavedState() {
-      if (!isAuthenticated || !user?.id || !canUseRiderTools) {
+      if (!isAuthenticated || !user?.id || !canUseRiderTools || !isPremium) {
         setIsFavorite(false);
         setActiveSubscriptionId(null);
         return;
@@ -108,7 +110,7 @@ export function StopDetailSheet({ stop, crowding, onClose }: StopDetailSheetProp
     return () => {
       isMounted = false;
     };
-  }, [canUseRiderTools, isAuthenticated, primaryEta?.routeId, stop.id, user?.id]);
+  }, [canUseRiderTools, isAuthenticated, isPremium, primaryEta?.routeId, stop.id, user?.id]);
 
   const requireLogin = () => {
     router.push("/settings?mode=login");
@@ -138,6 +140,11 @@ export function StopDetailSheet({ stop, crowding, onClose }: StopDetailSheetProp
       return;
     }
 
+    if (!isPremium) {
+      router.push("/premium");
+      return;
+    }
+
     setIsSavingFavorite(true);
 
     try {
@@ -164,6 +171,11 @@ export function StopDetailSheet({ stop, crowding, onClose }: StopDetailSheetProp
 
     if (!canUseRiderTools) {
       router.push("/fleet");
+      return;
+    }
+
+    if (!isPremium) {
+      router.push("/premium");
       return;
     }
 
@@ -309,50 +321,52 @@ export function StopDetailSheet({ stop, crowding, onClose }: StopDetailSheetProp
           )}
         </div>
         
-        <div className="mt-6 space-y-3 border-t border-gray-50 pt-4">
-          {!isAuthenticated ? (
-            <p className="text-xs text-gray-500">
-              {t("stop.signInHint")}
-            </p>
-          ) : isFleetManager ? (
-            <div className="space-y-3">
+        {!isAuthenticated || isFleetManager || isPremium ? (
+          <div className="mt-6 space-y-3 border-t border-gray-50 pt-4">
+            {!isAuthenticated ? (
               <p className="text-xs text-gray-500">
-                {t("stop.fleetHint")}
+                {t("stop.signInHint")}
               </p>
-              <Button
-                className="h-14 w-full text-sm font-semibold shadow-lg shadow-brand/20 bg-brand hover:bg-brand-dark"
-                variant="primary"
-                onClick={() => router.push("/fleet")}
-              >
-                <BusFront className="mr-2 h-4 w-4" />
-                {t("common.openFleetManager")}
-              </Button>
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 gap-3">
-              <Button
-                className="h-14 text-sm font-semibold"
-                variant={isFavorite ? "secondary" : "outline"}
-                isLoading={isSavingFavorite}
-                onClick={() => void handleFavoriteToggle()}
-              >
-                <Heart className="mr-2 h-4 w-4" />
-                {isFavorite ? t("stop.saved") : t("stop.saveStop")}
-              </Button>
+            ) : isFleetManager ? (
+              <div className="space-y-3">
+                <p className="text-xs text-gray-500">
+                  {t("stop.fleetHint")}
+                </p>
+                <Button
+                  className="h-14 w-full text-sm font-semibold shadow-lg shadow-brand/20 bg-brand hover:bg-brand-dark"
+                  variant="primary"
+                  onClick={() => router.push("/fleet")}
+                >
+                  <BusFront className="mr-2 h-4 w-4" />
+                  {t("common.openFleetManager")}
+                </Button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-3">
+                <Button
+                  className="h-14 text-sm font-semibold"
+                  variant={isFavorite ? "secondary" : "outline"}
+                  isLoading={isSavingFavorite}
+                  onClick={() => void handleFavoriteToggle()}
+                >
+                  <Heart className="mr-2 h-4 w-4" />
+                  {isFavorite ? t("stop.saved") : t("stop.saveStop")}
+                </Button>
 
-              <Button
-                className="h-14 text-sm font-semibold shadow-lg shadow-brand/20 bg-brand hover:bg-brand-dark"
-                variant="primary"
-                isLoading={isSavingAlert}
-                disabled={!primaryEta && isAuthenticated}
-                onClick={() => void handleAlertToggle()}
-              >
-                <Bell className="mr-2 h-4 w-4" />
-                {activeSubscriptionId ? t("stop.alertOn") : t("stop.notify")}
-              </Button>
-            </div>
-          )}
-        </div>
+                <Button
+                  className="h-14 text-sm font-semibold shadow-lg shadow-brand/20 bg-brand hover:bg-brand-dark"
+                  variant="primary"
+                  isLoading={isSavingAlert}
+                  disabled={!primaryEta && isAuthenticated}
+                  onClick={() => void handleAlertToggle()}
+                >
+                  <Bell className="mr-2 h-4 w-4" />
+                  {activeSubscriptionId ? t("stop.alertOn") : t("stop.notify")}
+                </Button>
+              </div>
+            )}
+          </div>
+        ) : null}
       </div>
     </div>
   );

@@ -12,6 +12,7 @@ import { StopCardSkeleton } from "@/components/ui/LoadingSkeleton";
 import { BusFront, HeartOff, LockKeyhole } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { useAuth } from "@/hooks/auth/useAuth";
+import { useBillingStatus } from "@/hooks/useBillingStatus";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 
 export default function FavoritesPage() {
@@ -26,14 +27,15 @@ export default function FavoritesPage() {
     canUseRiderTools,
     isFleetManager,
   } = useAuth();
+  const { isPremium, isBillingLoading } = useBillingStatus();
 
   useEffect(() => {
-    if (isAuthLoading) {
+    if (isAuthLoading || isBillingLoading) {
       return;
     }
 
     void fetchFavorites();
-  }, [canUseRiderTools, isAuthLoading, isAuthenticated, user?.id]);
+  }, [canUseRiderTools, isAuthLoading, isAuthenticated, isBillingLoading, isPremium, user?.id]);
 
   const fetchFavorites = async () => {
     if (!isAuthenticated || !user?.id) {
@@ -43,6 +45,12 @@ export default function FavoritesPage() {
     }
 
     if (!canUseRiderTools) {
+      setFavoriteStops([]);
+      setIsLoading(false);
+      return;
+    }
+
+    if (!isPremium) {
       setFavoriteStops([]);
       setIsLoading(false);
       return;
@@ -83,7 +91,7 @@ export default function FavoritesPage() {
           <div className="max-w-4xl mx-auto px-4 pt-6 md:px-8">
             <h2 className="text-3xl font-bold text-gray-900 mb-8">{t("favorites.title")}</h2>
             
-            {isLoading ? (
+            {isLoading || isBillingLoading ? (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 <StopCardSkeleton />
                 <StopCardSkeleton />
@@ -117,6 +125,22 @@ export default function FavoritesPage() {
                       onClick={() => router.push("/fleet")}
                     >
                       {t("common.openFleetManager")}
+                    </Button>
+                  }
+                />
+              </div>
+            ) : !isPremium ? (
+              <div className="mt-20">
+                <EmptyState
+                  icon={<LockKeyhole className="h-16 w-16 mx-auto" />}
+                  title={t("favorites.premiumTitle")}
+                  description={t("favorites.premiumDescription")}
+                  action={
+                    <Button
+                      variant="primary"
+                      onClick={() => router.push("/premium")}
+                    >
+                      {t("premium.getPremium")}
                     </Button>
                   }
                 />

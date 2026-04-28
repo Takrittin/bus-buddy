@@ -8,9 +8,13 @@ export type PremiumSubscriptionStatus =
   | "UNPAID"
   | "PAUSED";
 
+export type PremiumCheckoutPlan = "tourist_weekly" | "monthly";
+export type PremiumPlan = PremiumCheckoutPlan | "unknown";
+
 export interface BillingStatus {
   isPremium: boolean;
   status: PremiumSubscriptionStatus | null;
+  plan: PremiumPlan | null;
   currentPeriodEnd: string | null;
   cancelAtPeriodEnd: boolean;
   trialEndsAt: string | null;

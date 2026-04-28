@@ -102,6 +102,9 @@ export const messages: Record<AppLocale, MessageNode> = {
       tripPlanner: "Trip Planner",
       tripPlannerHint: "Use your current location and choose a destination stop.",
       tripPlannerPageHint: "Choose where you are starting and where you want to go. BusBuddy will use live backend data to suggest the best bus option.",
+      tripPlannerPremiumTitle: "Premium trip planning",
+      tripPlannerPremiumDescription:
+        "Advanced trip planning is part of BusBuddy Premium. Free riders can still use the live map, routes, and basic ETA.",
       origin: "Origin",
       currentLocation: "Current location",
       chooseOrigin: "Choose origin",
@@ -148,6 +151,10 @@ export const messages: Record<AppLocale, MessageNode> = {
       account: "Account",
       fleetAccessEnabled: "Fleet access enabled",
       favoritesEnabled: "Favorites and alert subscriptions are enabled for this account.",
+      premiumFeaturesEnabled: "Premium rider features are enabled for this account.",
+      premiumFeaturesLocked: "Favorites, alerts, AI assistant, and advanced trip planning need Premium.",
+      membershipPlan: "Membership plan",
+      premiumExpires: "Premium expires on {date}",
       loginError: "Unable to complete authentication.",
       accountType: "Account Type",
       name: "Name",
@@ -172,6 +179,9 @@ export const messages: Record<AppLocale, MessageNode> = {
       fleetTitle: "Favorites are hidden for fleet managers",
       fleetDescription:
         "This account is focused on operations, so saved rider stops are disabled for the fleet workflow.",
+      premiumTitle: "Premium is required for favorites",
+      premiumDescription:
+        "Free riders can still browse the map and ETA. Upgrade to save unlimited favorite stops.",
       emptyTitle: "No favorites yet",
       emptyDescription: "Save stops you use frequently to quickly see bus ETAs.",
     },
@@ -185,6 +195,9 @@ export const messages: Record<AppLocale, MessageNode> = {
       fleetTitle: "Alerts are hidden for fleet managers",
       fleetDescription:
         "Fleet accounts focus on live operations, so passenger arrival alerts are disabled for this role.",
+      premiumTitle: "Premium is required for alerts",
+      premiumDescription:
+        "Upgrade to create multiple bus arrival alerts for your trip.",
       emptyTitle: "No active alerts",
       emptyDescription:
         "Open a stop and tap Notify Arrivals to enable an alert for the next route.",
@@ -199,6 +212,16 @@ export const messages: Record<AppLocale, MessageNode> = {
         "Keep the same BusBuddy map, then add smarter AI, stronger alerts, unlimited saved stops, and better planning for daily Bangkok trips.",
       plan: "Premium plan",
       price: "฿99 / month",
+      touristPlan: "Tourist Pass",
+      monthlyPlan: "Monthly Premium",
+      touristBadge: "1 week",
+      touristTitle: "Thailand visitor pass",
+      touristPrice: "฿39 / week",
+      touristDescription:
+        "Best for foreign visitors exploring Bangkok and Thailand for a short trip.",
+      touristPlanActive: "Your 1-week Tourist Premium Pass is active.",
+      monthlyPlanActive: "Your Monthly Premium plan is active.",
+      expiresOn: "Valid until {date}",
       preview: "Preview",
       tryPlanner: "Try Trip Planner",
       registerEyebrow: "Premium registration",
@@ -234,6 +257,9 @@ export const messages: Record<AppLocale, MessageNode> = {
       premiumPlanner: "Advanced trip planner",
       premiumAnalytics: "Analytics and route recommendations",
       premiumNoAds: "No ads if ads are added later",
+      startTouristPass: "Start 1-week pass",
+      alreadyPremium: "Premium already active",
+      currentPlan: "Current plan",
       payWithCredit: "Pay with credit card",
       goToCreditPayment: "Continue to Stripe Checkout",
       busBuddyPlus: "BusBuddy Plus",
@@ -304,6 +330,8 @@ export const messages: Record<AppLocale, MessageNode> = {
       arrivingIn: "Arriving in",
       plate: "Plate {value}",
       signInHint: "Sign in from Settings to save favorite stops and enable alerts.",
+      premiumHint:
+        "Favorites and arrival alerts are Premium features. Upgrade to save this stop and get notified before the bus arrives.",
       fleetHint:
         "Fleet Manager accounts focus on live operations, so rider favorites and arrival alerts are hidden for this role.",
       saved: "Saved",
@@ -684,6 +712,9 @@ export const messages: Record<AppLocale, MessageNode> = {
       tripPlanner: "วางแผนการเดินทาง",
       tripPlannerHint: "ใช้ตำแหน่งปัจจุบันของคุณ แล้วเลือกป้ายปลายทาง",
       tripPlannerPageHint: "เลือกจุดเริ่มต้นและปลายทาง แล้ว BusBuddy จะใช้ข้อมูลจากระบบเพื่อแนะนำสายรถที่เหมาะที่สุด",
+      tripPlannerPremiumTitle: "วางแผนการเดินทางสำหรับ Premium",
+      tripPlannerPremiumDescription:
+        "Trip planner ขั้นสูงเป็นฟีเจอร์ Premium ผู้ใช้ฟรียังดูแผนที่ สายรถ และ ETA พื้นฐานได้ตามปกติ",
       origin: "จุดเริ่มต้น",
       currentLocation: "ตำแหน่งปัจจุบัน",
       chooseOrigin: "เลือกจุดเริ่มต้น",
@@ -730,6 +761,10 @@ export const messages: Record<AppLocale, MessageNode> = {
       account: "บัญชี",
       fleetAccessEnabled: "เปิดสิทธิ์ฟลีทแล้ว",
       favoritesEnabled: "บัญชีนี้สามารถใช้รายการโปรดและการแจ้งเตือนได้",
+      premiumFeaturesEnabled: "บัญชีนี้เปิดใช้ฟีเจอร์ Premium สำหรับผู้โดยสารแล้ว",
+      premiumFeaturesLocked: "รายการโปรด การแจ้งเตือน AI และ trip planner ขั้นสูงต้องใช้ Premium",
+      membershipPlan: "แพ็กเกจสมาชิก",
+      premiumExpires: "Premium หมดอายุวันที่ {date}",
       loginError: "ไม่สามารถดำเนินการยืนยันตัวตนได้",
       accountType: "ประเภทบัญชี",
       name: "ชื่อ",
@@ -753,6 +788,9 @@ export const messages: Record<AppLocale, MessageNode> = {
       fleetTitle: "ซ่อนรายการโปรดสำหรับบัญชีฟลีท",
       fleetDescription:
         "บัญชีนี้ใช้สำหรับงานปฏิบัติการ จึงปิดการใช้งานป้ายโปรดของฝั่งผู้โดยสาร",
+      premiumTitle: "รายการโปรดต้องใช้ Premium",
+      premiumDescription:
+        "ผู้ใช้ฟรียังดูแผนที่และ ETA ได้ตามปกติ อัปเกรดเพื่อบันทึกป้ายโปรดได้ไม่จำกัด",
       emptyTitle: "ยังไม่มีรายการโปรด",
       emptyDescription: "บันทึกป้ายที่คุณใช้บ่อยเพื่อดูเวลา ETA ได้เร็วขึ้น",
     },
@@ -766,6 +804,9 @@ export const messages: Record<AppLocale, MessageNode> = {
       fleetTitle: "ซ่อนการแจ้งเตือนสำหรับบัญชีฟลีท",
       fleetDescription:
         "บัญชีฟลีทเน้นงานปฏิบัติการ จึงปิดการแจ้งเตือนเวลารถจะถึงของผู้โดยสาร",
+      premiumTitle: "การแจ้งเตือนต้องใช้ Premium",
+      premiumDescription:
+        "อัปเกรดเพื่อสร้างการแจ้งเตือนรถมาถึงได้หลายรายการสำหรับการเดินทางของคุณ",
       emptyTitle: "ยังไม่มีการแจ้งเตือนที่เปิดอยู่",
       emptyDescription: "เปิดหน้าป้ายแล้วกดแจ้งเตือน เพื่อสร้างการแจ้งเตือนสำหรับรถสายถัดไป",
       routeLabel: "สาย {routeNumber}",
@@ -773,12 +814,22 @@ export const messages: Record<AppLocale, MessageNode> = {
     },
     premium: {
       eyebrow: "BusBuddy Premium",
-      getPremium: "Get Premium",
+      getPremium: "สมัคร Premium",
       title: "ปลดล็อก BusBuddy แบบเต็มรูปแบบ",
       subtitle:
         "ใช้แผนที่ BusBuddy แบบเดิม แต่เพิ่ม AI ที่ฉลาดขึ้น การแจ้งเตือนที่ยืดหยุ่น ป้ายโปรดไม่จำกัด และการวางแผนเดินทางที่เหมาะกับชีวิตประจำวันในกรุงเทพฯ",
       plan: "แพ็กเกจ Premium",
       price: "฿99 / เดือน",
+      touristPlan: "Tourist Pass",
+      monthlyPlan: "Premium รายเดือน",
+      touristBadge: "1 สัปดาห์",
+      touristTitle: "แพ็กสำหรับนักท่องเที่ยว",
+      touristPrice: "฿39 / สัปดาห์",
+      touristDescription:
+        "เหมาะกับชาวต่างชาติหรือนักท่องเที่ยวที่มาเที่ยวไทยระยะสั้น และอยากใช้การเดินทางในกรุงเทพฯ ให้ง่ายขึ้น",
+      touristPlanActive: "Tourist Premium Pass 1 สัปดาห์ของคุณเปิดใช้งานแล้ว",
+      monthlyPlanActive: "Premium รายเดือนของคุณเปิดใช้งานแล้ว",
+      expiresOn: "ใช้ได้ถึง {date}",
       preview: "ดูตัวอย่าง",
       tryPlanner: "ลองวางแผนการเดินทาง",
       registerEyebrow: "สมัครพรีเมียม",
@@ -814,6 +865,9 @@ export const messages: Record<AppLocale, MessageNode> = {
       premiumPlanner: "Trip planner ขั้นสูง",
       premiumAnalytics: "Analytics และคำแนะนำเส้นทาง",
       premiumNoAds: "ไม่มีโฆษณา หากเพิ่มโฆษณาในอนาคต",
+      startTouristPass: "เริ่มแพ็ก 1 สัปดาห์",
+      alreadyPremium: "Premium เปิดใช้งานอยู่",
+      currentPlan: "แพ็กปัจจุบัน",
       payWithCredit: "จ่ายด้วยบัตรเครดิต",
       goToCreditPayment: "ไปจ่ายผ่าน Stripe Checkout",
       busBuddyPlus: "BusBuddy Plus",
@@ -884,6 +938,8 @@ export const messages: Record<AppLocale, MessageNode> = {
       arrivingIn: "จะมาถึงใน",
       plate: "ทะเบียน {value}",
       signInHint: "เข้าสู่ระบบจากหน้าตั้งค่าเพื่อบันทึกป้ายโปรดและเปิดการแจ้งเตือน",
+      premiumHint:
+        "รายการโปรดและแจ้งเตือนรถมาถึงเป็นฟีเจอร์ Premium อัปเกรดเพื่อบันทึกป้ายนี้และรับแจ้งเตือนก่อนรถมาถึง",
       fleetHint:
         "บัญชีฟลีทเน้นงานปฏิบัติการ จึงซ่อนรายการโปรดและการแจ้งเตือนของผู้โดยสาร",
       saved: "บันทึกแล้ว",

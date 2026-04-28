@@ -1,13 +1,14 @@
 import { fetchApi } from "@/lib/api-client";
-import { BillingRedirect, BillingStatus } from "@/types/billing";
+import { BillingRedirect, BillingStatus, PremiumCheckoutPlan } from "@/types/billing";
 
 export async function getBillingStatus() {
   return fetchApi<BillingStatus>("/billing/me");
 }
 
-export async function createPremiumCheckoutSession() {
+export async function createPremiumCheckoutSession(plan: PremiumCheckoutPlan = "monthly") {
   return fetchApi<BillingRedirect>("/billing/checkout-session", {
     method: "POST",
+    body: JSON.stringify({ plan }),
   });
 }
 

@@ -5,13 +5,19 @@ import { usePathname } from "next/navigation";
 import { Bell, BusFront, Heart, Map, Route, Settings, Shield } from "lucide-react";
 import { cn } from "@/components/ui/Button";
 import { useAuth } from "@/hooks/auth/useAuth";
+import { useBillingStatus } from "@/hooks/useBillingStatus";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 
 export function BottomNav() {
   const pathname = usePathname();
-  const { canAccessFleet, canUseRiderTools, isAdmin, isLoading, isFleetManager } = useAuth();
+  const { canAccessFleet, canUseRiderTools, isAdmin, isLoading, isFleetManager, isAuthenticated } = useAuth();
+  const { isPremium, isBillingLoading } = useBillingStatus();
   const { t } = useLanguage();
-  const riderTabs = [
+  const freeRiderTabs = [
+    { name: t("nav.map"), href: "/", icon: Map },
+    { name: t("nav.settings"), href: "/settings", icon: Settings },
+  ];
+  const premiumRiderTabs = [
     { name: t("nav.map"), href: "/", icon: Map },
     { name: t("nav.tripPlanner"), href: "/trip-planner", icon: Route },
     { name: t("nav.favorites"), href: "/favorites", icon: Heart },
@@ -29,9 +35,13 @@ export function BottomNav() {
     adminTab,
     { name: t("nav.settings"), href: "/settings", icon: Settings },
   ];
+  const riderTabs =
+    isAuthenticated && !isBillingLoading && isPremium
+      ? premiumRiderTabs
+      : freeRiderTabs;
 
   const tabs = isLoading
-    ? riderTabs
+    ? freeRiderTabs
     : isFleetManager
       ? fleetTabs
       : isAdmin
