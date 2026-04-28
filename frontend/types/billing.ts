@@ -18,6 +18,7 @@ export interface BillingStatus {
   currentPeriodEnd: string | null;
   cancelAtPeriodEnd: boolean;
   trialEndsAt: string | null;
+  canManageBillingPortal?: boolean;
 }
 
 export interface BillingRedirect {

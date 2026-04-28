@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/Button";
 import {
   createFleetAccount,
   deleteAdminUser,
+  grantAdminUserPremium,
   getAdminUsers,
   getAuditLogs,
   getSystemHealth,
@@ -18,6 +19,7 @@ import {
 import { useAuth } from "@/hooks/auth/useAuth";
 import { AdminUserRecord, AuditLogRecord, SystemHealthSnapshot } from "@/types/admin";
 import { UserRole } from "@/types/auth";
+import { PremiumCheckoutPlan, PremiumPlan } from "@/types/billing";
 import { formatUserRole } from "@/lib/auth/roles";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { getAnalyticsDashboard } from "@/services/insights";
@@ -36,6 +38,7 @@ type EditableUser = Record<
 >;
 
 const AUDIT_LOGS_PER_PAGE = 20;
+const PREMIUM_GRANT_PLANS: PremiumCheckoutPlan[] = ["tourist_weekly", "monthly"];
 
 export default function AdminPage() {
   const router = useRouter();
@@ -46,6 +49,7 @@ export default function AdminPage() {
   const [analytics, setAnalytics] = useState<AnalyticsDashboard | null>(null);
   const [auditLogs, setAuditLogs] = useState<AuditLogRecord[]>([]);
   const [draftUsers, setDraftUsers] = useState<EditableUser>({});
+  const [premiumPlanDrafts, setPremiumPlanDrafts] = useState<Record<string, PremiumCheckoutPlan>>({});
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [userSearchQuery, setUserSearchQuery] = useState("");
@@ -91,6 +95,14 @@ export default function AdminPage() {
               isActive: user.isActive,
               mustResetPassword: user.mustResetPassword,
             },
+          ]),
+        ),
+      );
+      setPremiumPlanDrafts(
+        Object.fromEntries(
+          nextUsers.map((user) => [
+            user.id,
+            toGrantablePremiumPlan(user.premium.plan),
           ]),
         ),
       );
@@ -193,6 +205,30 @@ export default function AdminPage() {
     }
 
     return new Date(value).toLocaleString(locale === "th" ? "th-TH" : "en-US");
+  };
+
+  const formatPremiumPlan = (plan: PremiumPlan | null | undefined) => {
+    if (plan === "tourist_weekly") {
+      return t("admin.touristWeeklyPremium");
+    }
+
+    if (plan === "monthly") {
+      return t("admin.monthlyPremium");
+    }
+
+    if (plan === "unknown") {
+      return t("admin.unknownPremium");
+    }
+
+    return t("admin.freePlan");
+  };
+
+  const formatPremiumStatus = (user: AdminUserRecord) => {
+    if (!user.premium.isPremium) {
+      return t("admin.freePlan");
+    }
+
+    return formatPremiumPlan(user.premium.plan);
   };
 
   const formatHealthStatus = (value: string | null | undefined) => {
@@ -318,6 +354,44 @@ export default function AdminPage() {
       await loadAdminData();
     } catch (deleteError) {
       setError(deleteError instanceof Error ? deleteError.message : t("admin.deleteError"));
+    }
+  };
+
+  const handleGrantPremium = async (user: AdminUserRecord) => {
+    const plan = premiumPlanDrafts[user.id] ?? toGrantablePremiumPlan(user.premium.plan);
+    const confirmed = window.confirm(
+      t("admin.grantPremiumConfirm", {
+        email: user.email,
+        plan: formatPremiumPlan(plan),
+      }),
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    const reason = getReason(t("admin.grantPremiumReason"));
+
+    if (!reason) {
+      return;
+    }
+
+    try {
+      const updatedUser = await grantAdminUserPremium(user.id, {
+        plan,
+        reason,
+      });
+      setUsers((currentUsers) =>
+        currentUsers.map((currentUser) =>
+          currentUser.id === user.id ? updatedUser : currentUser,
+        ),
+      );
+      setPremiumPlanDrafts((current) => ({
+        ...current,
+        [user.id]: toGrantablePremiumPlan(updatedUser.premium.plan),
+      }));
+    } catch (grantError) {
+      setError(grantError instanceof Error ? grantError.message : t("admin.grantPremiumError"));
     }
   };
 
@@ -622,6 +696,21 @@ export default function AdminPage() {
                                   count: user.notificationCount,
                                 })}
                               </p>
+                              <div className="mt-3 rounded-2xl border border-orange-100 bg-orange-50 px-3 py-2">
+                                <p className="font-semibold uppercase tracking-[0.12em] text-brand">
+                                  {t("admin.premiumStatus")}
+                                </p>
+                                <p className="mt-1 font-medium text-gray-800">
+                                  {formatPremiumStatus(user)}
+                                </p>
+                                {user.premium.currentPeriodEnd ? (
+                                  <p className="mt-1 text-gray-500">
+                                    {t("admin.premiumExpires", {
+                                      value: formatDateTime(user.premium.currentPeriodEnd),
+                                    })}
+                                  </p>
+                                ) : null}
+                              </div>
                             </td>
                             <td className="space-y-2 px-3 py-4">
                               <Button
@@ -639,6 +728,33 @@ export default function AdminPage() {
                                 onClick={() => void handleResetPassword(user)}
                               >
                                 {t("admin.resetPassword")}
+                              </Button>
+                              <select
+                                value={premiumPlanDrafts[user.id] ?? toGrantablePremiumPlan(user.premium.plan)}
+                                disabled={isDeleted || user.role !== "USER"}
+                                onChange={(event) =>
+                                  setPremiumPlanDrafts((current) => ({
+                                    ...current,
+                                    [user.id]: event.target.value as PremiumCheckoutPlan,
+                                  }))
+                                }
+                                className="w-full rounded-2xl border border-gray-200 px-3 py-2 text-sm disabled:bg-gray-50 disabled:text-gray-400"
+                              >
+                                {PREMIUM_GRANT_PLANS.map((plan) => (
+                                  <option key={plan} value={plan}>
+                                    {formatPremiumPlan(plan)}
+                                  </option>
+                                ))}
+                              </select>
+                              <Button
+                                variant="outline"
+                                className="w-full border-orange-200 bg-orange-50 text-brand hover:bg-orange-100"
+                                disabled={isDeleted || user.role !== "USER"}
+                                onClick={() => void handleGrantPremium(user)}
+                              >
+                                {user.premium.isPremium
+                                  ? t("admin.extendPremium")
+                                  : t("admin.grantPremium")}
                               </Button>
                               <Button
                                 variant="ghost"
@@ -924,4 +1040,8 @@ function HealthRow({
       {detail ? <p className="mt-2 text-xs text-gray-500">{detail}</p> : null}
     </div>
   );
+}
+
+function toGrantablePremiumPlan(plan: PremiumPlan | null | undefined): PremiumCheckoutPlan {
+  return plan === "tourist_weekly" ? "tourist_weekly" : "monthly";
 }

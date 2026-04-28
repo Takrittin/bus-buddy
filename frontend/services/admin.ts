@@ -3,6 +3,7 @@ import {
   AdminUserRecord,
   AuditLogRecord,
   CreateFleetAccountInput,
+  GrantAdminUserPremiumInput,
   SystemHealthSnapshot,
   UpdateAdminUserInput,
 } from "@/types/admin";
@@ -21,6 +22,14 @@ type ApiAdminUser = {
   deleted_at?: string | null;
   favorite_stop_count: number;
   notification_count: number;
+  premium?: {
+    is_premium: boolean;
+    status?: AdminUserRecord["premium"]["status"];
+    plan?: AdminUserRecord["premium"]["plan"];
+    current_period_end?: string | null;
+    cancel_at_period_end?: boolean;
+    trial_ends_at?: string | null;
+  };
   created_at: string;
   updated_at: string;
 };
@@ -61,6 +70,14 @@ function mapUser(user: ApiAdminUser): AdminUserRecord {
     deletedAt: user.deleted_at,
     favoriteStopCount: user.favorite_stop_count,
     notificationCount: user.notification_count,
+    premium: {
+      isPremium: user.premium?.is_premium ?? false,
+      status: user.premium?.status ?? null,
+      plan: user.premium?.plan ?? null,
+      currentPeriodEnd: user.premium?.current_period_end ?? null,
+      cancelAtPeriodEnd: user.premium?.cancel_at_period_end ?? false,
+      trialEndsAt: user.premium?.trial_ends_at ?? null,
+    },
     createdAt: user.created_at,
     updatedAt: user.updated_at,
   };
@@ -87,6 +104,17 @@ export async function resetAdminUserPassword(
     method: "POST",
     body: JSON.stringify(input),
   });
+}
+
+export async function grantAdminUserPremium(
+  userId: string,
+  input: GrantAdminUserPremiumInput,
+) {
+  const response = await fetchApi<ApiAdminUser>(`/admin/users/${userId}/premium`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+  return mapUser(response);
 }
 
 export async function deleteAdminUser(userId: string, input?: { reason?: string }) {

@@ -158,6 +158,15 @@ export class AiService {
       baseTools,
       this.getFleetAutoToolCalls(intent, fleetAssistantDto),
     );
+    const deterministicReply = this.tryReplyWithFleetToolResults(
+      fleetAssistantDto,
+      intent,
+      verifiedToolResults,
+    );
+
+    if (deterministicReply) {
+      return deterministicReply;
+    }
 
     return this.replyWithTools({
       message: fleetAssistantDto.message,
@@ -184,6 +193,15 @@ export class AiService {
       baseTools,
       this.getAdminAutoToolCalls(intent),
     );
+    const deterministicReply = this.tryReplyWithAdminToolResults(
+      adminAssistantDto,
+      intent,
+      verifiedToolResults,
+    );
+
+    if (deterministicReply) {
+      return deterministicReply;
+    }
 
     return this.replyWithTools({
       message: adminAssistantDto.message,
@@ -250,11 +268,12 @@ export class AiService {
         }> = response.functionCalls ?? [];
 
         if (functionCalls.length === 0) {
-          const message =
+          const message = this.cleanAssistantText(
             toolCallsUsed.length === 0 && this.shouldAvoidUnverifiedAnswer(input.message)
               ? input.fallbackMessage
               : response.text?.trim() ||
-                'I could not find a useful response from the available BusBuddy data just now.';
+                'I could not find a useful response from the available BusBuddy data just now.',
+          );
 
           return {
             message,
@@ -307,8 +326,9 @@ export class AiService {
         }
 
         if (functionResponseParts.length === 0) {
-          const message =
-            response.text?.trim() || 'I could not complete a tool lookup for that question.';
+          const message = this.cleanAssistantText(
+            response.text?.trim() || 'I could not complete a tool lookup for that question.',
+          );
 
           return {
             message,
@@ -329,8 +349,9 @@ export class AiService {
         });
       }
 
-      const message =
-        'I reached the tool-call limit for this question. Please try asking in a shorter way.';
+      const message = this.cleanAssistantText(
+        'I reached the tool-call limit for this question. Please try asking in a shorter way.',
+      );
 
       return {
         message,
@@ -409,6 +430,7 @@ export class AiService {
       this.getLanguageInstruction(fleetAssistantDto.locale),
       'Use only verified fleet/backend data. If data is missing, say what is missing.',
       'Prioritize delay, traffic, occupancy, buses, drivers, and shifts when present.',
+      'Do not use markdown bold, tables, or decorative formatting.',
       'No outside knowledge. Do not mention tool names.',
       fleetAssistantDto.activeTab ? `Current fleet tab: ${fleetAssistantDto.activeTab}.` : '',
     ]
@@ -422,6 +444,7 @@ export class AiService {
       this.getLanguageInstruction(adminAssistantDto.locale),
       'Use only verified admin/backend data. If data is missing, say what is missing.',
       'Focus on users, system health, audit logs, and safe admin actions.',
+      'Do not use markdown bold, tables, or decorative formatting.',
       'No outside knowledge. Do not mention tool names.',
       adminAssistantDto.activeSection
         ? `Current admin section: ${adminAssistantDto.activeSection}.`
@@ -433,8 +456,16 @@ export class AiService {
 
   private getLanguageInstruction(locale?: 'en' | 'th') {
     return locale === 'th'
-      ? 'ตอบไทยแบบกระชับ ไม่เกิน 3 bullet หรือ 4 ประโยค ใช้ข้อมูลจาก tools เท่านั้น.'
-      : 'Reply in concise English, max 3 bullets or 4 sentences, using tool data only.';
+      ? 'ตอบไทยแบบกระชับ เป็นภาษาคนทำงานจริง ไม่เกิน 4 บรรทัด ใช้ข้อมูลจาก tools เท่านั้น.'
+      : 'Reply in concise English, max 4 lines, using tool data only.';
+  }
+
+  private cleanAssistantText(message: string) {
+    return message
+      .replace(/\*\*(.*?)\*\*/g, '$1')
+      .replace(/__([^_]+)__/g, '$1')
+      .replace(/^\s*[-*]\s+/gm, '- ')
+      .trim();
   }
 
   private pickTools(toolSet: AssistantToolSet, allowedNames: string[]): AssistantToolSet {
@@ -643,17 +674,17 @@ export class AiService {
     }
 
     if (
-      fleetAssistantDto.selectedRouteId ||
-      /(route|health|delay|traffic|สาย|ล่าช้า|รถติด)/i.test(text)
+      fleetAssistantDto.activeTab === 'vehicles' ||
+      /(bus|vehicle|fleet|รถคัน|คันไหน|รถคันไหน|ทะเบียน)/i.test(text)
     ) {
-      return 'route_health';
+      return 'buses';
     }
 
     if (
-      fleetAssistantDto.activeTab === 'vehicles' ||
-      /(bus|vehicle|fleet|รถ|คัน)/i.test(text)
+      fleetAssistantDto.selectedRouteId ||
+      /(route|health|delay|traffic|สาย|ล่าช้า|รถติด|จราจร)/i.test(text)
     ) {
-      return 'buses';
+      return 'route_health';
     }
 
     if (fleetAssistantDto.activeTab === 'overview') {
@@ -696,6 +727,10 @@ export class AiService {
           args: { busId: fleetAssistantDto.selectedBusId },
         },
       ];
+    }
+
+    if (intent === 'assignment') {
+      return [{ name: 'get_fleet_buses', args: routeArgs }];
     }
 
     if (intent === 'shifts') {
@@ -793,6 +828,403 @@ export class AiService {
     }
 
     return 'I could not verify that from BusBuddy backend data yet. Try asking about nearby stops, route numbers, live buses, or ETA.';
+  }
+
+  private tryReplyWithAdminToolResults(
+    adminAssistantDto: AdminAssistantDto,
+    intent: AdminAssistantIntent,
+    results: AssistantVerifiedToolResult[],
+  ): AssistantResponsePayload | null {
+    const toolCalls = results.map((result) => result.name);
+    const result =
+      this.getVerifiedResult(results, 'get_admin_user_summary') ??
+      this.getVerifiedResult(results, 'get_admin_system_health') ??
+      this.getVerifiedResult(results, 'get_admin_audit_logs');
+
+    if (!result || this.hasToolError(result)) {
+      return null;
+    }
+
+    let message: string | null = null;
+
+    if (intent === 'users') {
+      message = this.formatAdminUsersReply(adminAssistantDto.locale, result);
+    } else if (intent === 'health' || intent === 'general') {
+      message = this.formatAdminHealthReply(adminAssistantDto.locale, result);
+    } else if (intent === 'audit') {
+      message = this.formatAdminAuditReply(adminAssistantDto.locale, result);
+    }
+
+    if (!message) {
+      return null;
+    }
+
+    return this.buildDeterministicReply(
+      adminAssistantDto.summary,
+      adminAssistantDto.message,
+      message,
+      toolCalls,
+      'busbuddy-admin-router',
+    );
+  }
+
+  private tryReplyWithFleetToolResults(
+    fleetAssistantDto: FleetAssistantDto,
+    intent: FleetAssistantIntent,
+    results: AssistantVerifiedToolResult[],
+  ): AssistantResponsePayload | null {
+    const toolCalls = results.map((result) => result.name);
+    const resultEntry =
+      results.find((result) => result.name === 'get_fleet_overview') ??
+      results.find((result) => result.name === 'get_route_health') ??
+      results.find((result) => result.name === 'get_fleet_buses') ??
+      results.find((result) => result.name === 'get_active_shifts') ??
+      results.find((result) => result.name === 'get_bus_assignment');
+    const result = resultEntry?.result;
+
+    if (!result || this.hasToolError(result)) {
+      return null;
+    }
+
+    let message: string | null = null;
+
+    if (intent === 'overview' || intent === 'general') {
+      message = this.formatFleetOverviewReply(fleetAssistantDto.locale, result);
+    } else if (intent === 'route_health') {
+      message = this.formatFleetRouteHealthReply(fleetAssistantDto.locale, result);
+    } else if (intent === 'buses') {
+      message = this.formatFleetBusesReply(fleetAssistantDto.locale, result);
+    } else if (intent === 'shifts') {
+      message = this.formatFleetShiftsReply(fleetAssistantDto.locale, result);
+    } else if (intent === 'assignment') {
+      message =
+        resultEntry?.name === 'get_bus_assignment'
+          ? this.formatFleetAssignmentReply(fleetAssistantDto.locale, result)
+          : this.formatFleetBusesReply(fleetAssistantDto.locale, result);
+    }
+
+    if (!message) {
+      return null;
+    }
+
+    return this.buildDeterministicReply(
+      fleetAssistantDto.summary,
+      fleetAssistantDto.message,
+      message,
+      toolCalls,
+      'busbuddy-fleet-router',
+    );
+  }
+
+  private buildDeterministicReply(
+    summary: string | undefined,
+    userMessage: string,
+    message: string,
+    toolCalls: string[],
+    model: string,
+  ): AssistantResponsePayload {
+    const cleanMessage = this.cleanAssistantText(message);
+
+    return {
+      message: cleanMessage,
+      tool_calls: toolCalls,
+      model,
+      summary: this.buildRollingSummary(summary, userMessage, cleanMessage, toolCalls),
+    };
+  }
+
+  private getVerifiedResult(results: AssistantVerifiedToolResult[], name: string) {
+    return results.find((result) => result.name === name)?.result ?? null;
+  }
+
+  private hasToolError(result: unknown) {
+    return Boolean(
+      result &&
+        typeof result === 'object' &&
+        'error' in result &&
+        (result as { error?: unknown }).error,
+    );
+  }
+
+  private formatAdminUsersReply(locale: 'en' | 'th' | undefined, result: unknown) {
+    const data = result as {
+      counts?: Record<string, number>;
+      users?: Array<Record<string, unknown>>;
+    };
+    const counts = data.counts ?? {};
+    const users = Array.isArray(data.users) ? data.users : [];
+    const resetUsers = users.filter((user) => Boolean(user.must_reset_password));
+    const disabledOrDeleted = users.filter((user) => user.status !== 'active');
+    const neverLoggedIn = users.filter(
+      (user) => user.status === 'active' && !user.last_login_at,
+    );
+    const adminUsers = users.filter((user) => user.role === 'ADMIN');
+    const userLabel = (user: Record<string, unknown>) =>
+      String(user.name || user.email || user.id || 'unknown');
+
+    if (locale === 'th') {
+      const attentionItems = [
+        resetUsers.length
+          ? `ต้องรีเซ็ตรหัสผ่าน ${resetUsers.length} คน: ${resetUsers.slice(0, 3).map(userLabel).join(', ')}`
+          : null,
+        disabledOrDeleted.length
+          ? `บัญชีปิด/ลบ ${disabledOrDeleted.length} คน: ${disabledOrDeleted.slice(0, 3).map(userLabel).join(', ')}`
+          : null,
+        neverLoggedIn.length
+          ? `ยังไม่เคย login ${neverLoggedIn.length} คน: ${neverLoggedIn.slice(0, 3).map(userLabel).join(', ')}`
+          : null,
+      ].filter(Boolean);
+
+      return [
+        `ภาพรวมผู้ใช้: ทั้งหมด ${counts.total_users ?? users.length} คน, active ${counts.active_users ?? 0}, admin ${counts.admins ?? 0}, fleet ${counts.fleet_managers ?? 0}, premium ${counts.premium_users ?? 0}`,
+        attentionItems.length
+          ? `ควรดู: ${attentionItems.join(' | ')}`
+          : 'ตอนนี้ไม่พบบัญชีที่เสี่ยงชัดเจนจากข้อมูล users ล่าสุด',
+        adminUsers.length
+          ? `บัญชี admin ตอนนี้: ${adminUsers.slice(0, 3).map(userLabel).join(', ')}`
+          : 'ยังไม่พบรายชื่อ admin ในชุดข้อมูลที่ดึงมา',
+      ].join('\n');
+    }
+
+    const attentionItems = [
+      resetUsers.length
+        ? `${resetUsers.length} password reset required: ${resetUsers.slice(0, 3).map(userLabel).join(', ')}`
+        : null,
+      disabledOrDeleted.length
+        ? `${disabledOrDeleted.length} disabled/deleted: ${disabledOrDeleted.slice(0, 3).map(userLabel).join(', ')}`
+        : null,
+      neverLoggedIn.length
+        ? `${neverLoggedIn.length} never logged in: ${neverLoggedIn.slice(0, 3).map(userLabel).join(', ')}`
+        : null,
+    ].filter(Boolean);
+
+    return [
+      `User overview: ${counts.total_users ?? users.length} total, ${counts.active_users ?? 0} active, ${counts.admins ?? 0} admins, ${counts.fleet_managers ?? 0} fleet managers, ${counts.premium_users ?? 0} premium.`,
+      attentionItems.length
+        ? `Needs attention: ${attentionItems.join(' | ')}`
+        : 'No obvious risky accounts in the latest user data.',
+      adminUsers.length
+        ? `Current admins: ${adminUsers.slice(0, 3).map(userLabel).join(', ')}`
+        : 'No admin account was included in the returned user sample.',
+    ].join('\n');
+  }
+
+  private formatAdminHealthReply(locale: 'en' | 'th' | undefined, result: unknown) {
+    const data = result as Record<string, unknown>;
+    const ai = (data.ai ?? {}) as Record<string, unknown>;
+    const transitSync = (data.transit_sync ?? {}) as Record<string, unknown>;
+    const backend = String(data.backend ?? 'unknown');
+    const database = String(data.database ?? 'unknown');
+    const websocket = String(data.websocket ?? 'unknown');
+    const aiStatus = String(ai.status ?? 'unknown');
+    const aiModel = String(ai.model ?? 'unknown');
+    const syncStatus = String(transitSync.status ?? 'unknown');
+    const syncMessage = String(transitSync.message ?? '');
+    const issues = [
+      backend !== 'online' ? `backend=${backend}` : null,
+      database !== 'online' ? `database=${database}` : null,
+      !['online', 'starting'].includes(websocket) ? `websocket=${websocket}` : null,
+      aiStatus !== 'online' ? `ai=${aiStatus}` : null,
+      !['success', 'skipped'].includes(syncStatus) ? `transit_sync=${syncStatus}` : null,
+    ].filter(Boolean);
+
+    if (locale === 'th') {
+      return [
+        issues.length
+          ? `ระบบยังมีจุดที่ควรดู: ${issues.join(', ')}`
+          : 'ระบบโดยรวมปกติดีจากข้อมูล backend ล่าสุด',
+        `สถานะหลัก: backend ${backend}, database ${database}, websocket ${websocket}, AI ${aiStatus} (${aiModel})`,
+        `Transit sync: ${syncStatus}${syncMessage ? ` - ${syncMessage}` : ''}`,
+      ].join('\n');
+    }
+
+    return [
+      issues.length
+        ? `System has items to review: ${issues.join(', ')}`
+        : 'Overall system health looks normal from the latest backend data.',
+      `Core status: backend ${backend}, database ${database}, websocket ${websocket}, AI ${aiStatus} (${aiModel}).`,
+      `Transit sync: ${syncStatus}${syncMessage ? ` - ${syncMessage}` : ''}`,
+    ].join('\n');
+  }
+
+  private formatAdminAuditReply(locale: 'en' | 'th' | undefined, result: unknown) {
+    const logs = Array.isArray(result) ? (result as Array<Record<string, unknown>>) : [];
+
+    if (logs.length === 0) {
+      return locale === 'th'
+        ? 'ยังไม่มี audit log ล่าสุดในข้อมูลที่ดึงมา ถ้าคาดว่าควรมี ให้เช็กการเชื่อมต่อ database หรือ filter ในหน้า audit log'
+        : 'No recent audit logs were returned. If you expected changes, check database connectivity or audit log filters.';
+    }
+
+    const formatLog = (log: Record<string, unknown>) => {
+      const actor = String(log.actor_email ?? 'System');
+      const action = String(log.action ?? 'unknown action');
+      const summary = String(log.summary ?? '-');
+      const createdAt = log.created_at
+        ? new Date(String(log.created_at)).toLocaleString(locale === 'th' ? 'th-TH' : 'en-US')
+        : '';
+      return locale === 'th'
+        ? `- ${action} โดย ${actor}${createdAt ? ` เวลา ${createdAt}` : ''}: ${summary}`
+        : `- ${action} by ${actor}${createdAt ? ` at ${createdAt}` : ''}: ${summary}`;
+    };
+
+    return locale === 'th'
+      ? [`audit log ล่าสุด ${logs.length} รายการ:`, ...logs.slice(0, 3).map(formatLog)].join('\n')
+      : [`Latest ${logs.length} audit log entries:`, ...logs.slice(0, 3).map(formatLog)].join('\n');
+  }
+
+  private formatFleetOverviewReply(locale: 'en' | 'th' | undefined, result: unknown) {
+    const data = result as Record<string, unknown>;
+    const active = Number(data.active_buses ?? 0);
+    const delayed = Number(data.delayed_buses ?? 0);
+    const severeTraffic = Number(data.severe_traffic_buses ?? 0);
+    const full = Number(data.full_buses ?? 0);
+    const speed = Number(data.average_speed_kmh ?? 0);
+    const routes = Number(data.monitored_routes ?? 0);
+
+    if (locale === 'th') {
+      return [
+        `ภาพรวมฟลีท: รถ active ${active} คัน ครอบคลุม ${routes} สาย ความเร็วเฉลี่ย ${speed} km/h`,
+        delayed || severeTraffic || full
+          ? `ควรโฟกัส: รถล่าช้า ${delayed} คัน, รถติดหนัก ${severeTraffic} คัน, รถเต็ม ${full} คัน`
+          : 'ตอนนี้ยังไม่พบสัญญาณเสี่ยงเด่นจากข้อมูลฟลีทล่าสุด',
+        delayed || severeTraffic
+          ? 'แนะนำให้ดู route health ก่อน แล้วเช็ก headway ของสายที่ delay สูงสุด'
+          : 'ให้ monitor ความเร็วเฉลี่ยและ occupancy ต่อเนื่องในช่วงพีค',
+      ].join('\n');
+    }
+
+    return [
+      `Fleet overview: ${active} active buses across ${routes} routes, average speed ${speed} km/h.`,
+      delayed || severeTraffic || full
+        ? `Focus now: ${delayed} delayed, ${severeTraffic} in severe traffic, ${full} full buses.`
+        : 'No major fleet risk signal in the latest data.',
+      delayed || severeTraffic
+        ? 'Check route health first, then inspect headway on the highest-delay routes.'
+        : 'Keep monitoring average speed and occupancy during peak periods.',
+    ].join('\n');
+  }
+
+  private formatFleetRouteHealthReply(locale: 'en' | 'th' | undefined, result: unknown) {
+    const routes = Array.isArray(result)
+      ? (result as Array<Record<string, unknown>>)
+      : [];
+    const rankedRoutes = [...routes]
+      .sort(
+        (left, right) =>
+          Number(right.max_delay_minutes ?? 0) - Number(left.max_delay_minutes ?? 0) ||
+          Number(right.delayed_buses ?? 0) - Number(left.delayed_buses ?? 0) ||
+          Number(left.average_speed_kmh ?? 999) - Number(right.average_speed_kmh ?? 999),
+      )
+      .slice(0, 3);
+
+    if (!rankedRoutes.length) {
+      return locale === 'th'
+        ? 'ยังไม่มีข้อมูล route health จาก backend ในตอนนี้'
+        : 'No route health data is available from the backend right now.';
+    }
+
+    const formatRoute = (route: Record<string, unknown>) => {
+      const routeNumber = String(route.route_number ?? route.route_id ?? 'unknown');
+      const delay = Number(route.max_delay_minutes ?? 0);
+      const delayed = Number(route.delayed_buses ?? 0);
+      const speed = Number(route.average_speed_kmh ?? 0);
+      return locale === 'th'
+        ? `- สาย ${routeNumber}: delay สูงสุด ${delay} นาที, delayed ${delayed} คัน, เฉลี่ย ${speed} km/h`
+        : `- Route ${routeNumber}: max delay ${delay} min, ${delayed} delayed buses, ${speed} km/h avg.`;
+    };
+
+    return locale === 'th'
+      ? ['สายที่ควรโฟกัสตอนนี้:', ...rankedRoutes.map(formatRoute), 'ถ้า delay เกิน headway เฉลี่ย ให้พิจารณาส่งรถเสริมหรือปรับ dispatch'].join('\n')
+      : ['Routes needing attention now:', ...rankedRoutes.map(formatRoute), 'If delay exceeds average headway, consider dispatch support or spacing correction.'].join('\n');
+  }
+
+  private formatFleetBusesReply(locale: 'en' | 'th' | undefined, result: unknown) {
+    const buses = Array.isArray(result) ? (result as Array<Record<string, unknown>>) : [];
+    const trafficScore: Record<string, number> = {
+      severe: 4,
+      heavy: 3,
+      moderate: 2,
+      light: 1,
+      free_flow: 0,
+    };
+    const rankedBuses = [...buses]
+      .sort(
+        (left, right) =>
+          (trafficScore[String(right.traffic_level ?? '')] ?? 0) -
+            (trafficScore[String(left.traffic_level ?? '')] ?? 0) ||
+          (right.status === 'delayed' ? 1 : 0) - (left.status === 'delayed' ? 1 : 0) ||
+          Number(left.speed_kmh ?? 999) - Number(right.speed_kmh ?? 999),
+      )
+      .slice(0, 4);
+
+    if (!rankedBuses.length) {
+      return locale === 'th'
+        ? 'ยังไม่มีข้อมูลรถจาก backend ในตอนนี้'
+        : 'No bus-level fleet data is available from the backend right now.';
+    }
+
+    const formatBus = (bus: Record<string, unknown>) => {
+      const label = String(bus.license_plate ?? bus.bus_id ?? 'unknown bus');
+      const route = String(bus.route_number ?? bus.route_id ?? '-');
+      const traffic = String(bus.traffic_level ?? 'unknown traffic');
+      const status = String(bus.status ?? 'unknown');
+      const speed = Number(bus.speed_kmh ?? 0);
+      const nextStop = bus.next_stop_name ? `, next ${String(bus.next_stop_name)}` : '';
+      return locale === 'th'
+        ? `- ${label} สาย ${route}: ${traffic}, ${status}, ${speed} km/h${nextStop}`
+        : `- ${label} on route ${route}: ${traffic}, ${status}, ${speed} km/h${nextStop}`;
+    };
+
+    return locale === 'th'
+      ? ['รถที่ควรดูจากข้อมูลล่าสุด:', ...rankedBuses.map(formatBus), 'เริ่มจากคันที่ traffic severe/heavy หรือ status delayed ก่อน'].join('\n')
+      : ['Buses to inspect from the latest data:', ...rankedBuses.map(formatBus), 'Start with severe/heavy traffic or delayed buses first.'].join('\n');
+  }
+
+  private formatFleetShiftsReply(locale: 'en' | 'th' | undefined, result: unknown) {
+    const data = result as Record<string, unknown>;
+    const shifts = Array.isArray(result)
+      ? (result as Array<Record<string, unknown>>)
+      : Array.isArray(data.shifts)
+        ? (data.shifts as Array<Record<string, unknown>>)
+        : [];
+    const total = Number(data.total_active_shifts ?? shifts.length);
+    const endingSoon = shifts.filter((shift) => Boolean(shift.ends_within_90_minutes));
+
+    if (!shifts.length) {
+      return locale === 'th'
+        ? 'ยังไม่พบกะคนขับ active จาก backend ตอนนี้'
+        : 'No active driver shifts were returned by the backend right now.';
+    }
+
+    const formatShift = (shift: Record<string, unknown>) => {
+      const driver = String(shift.driver_name ?? 'unknown driver');
+      const bus = String(shift.bus_vehicle_number ?? '-');
+      const route = String(shift.route_number ?? '-');
+      return locale === 'th'
+        ? `- ${driver}: รถ ${bus}, สาย ${route}, ${String(shift.status ?? 'unknown')}`
+        : `- ${driver}: bus ${bus}, route ${route}, ${String(shift.status ?? 'unknown')}`;
+    };
+
+    return locale === 'th'
+      ? [`มีกะ active ทั้งหมด ${total} กะ${endingSoon.length ? ` และใกล้หมดกะ ${endingSoon.length} กะ` : ''}`, ...shifts.slice(0, 3).map(formatShift), endingSoon.length ? 'แนะนำเตรียม handover/คนขับสำรองสำหรับกะที่ใกล้หมด' : 'ยังไม่เห็นความเสี่ยงจากกะในชุดข้อมูลล่าสุด'].join('\n')
+      : [`There are ${total} active shifts${endingSoon.length ? ` and ${endingSoon.length} ending soon` : ''}.`, ...shifts.slice(0, 3).map(formatShift), endingSoon.length ? 'Prepare handover or backup drivers for ending shifts.' : 'No shift risk is obvious in the latest data.'].join('\n');
+  }
+
+  private formatFleetAssignmentReply(locale: 'en' | 'th' | undefined, result: unknown) {
+    const bus = result as Record<string, unknown>;
+    const vehicle = String(bus.vehicle_number ?? bus.id ?? 'unknown bus');
+    const plate = String(bus.license_plate ?? '-');
+    const route = String(bus.route_number ?? bus.route_id ?? '-');
+    const driver = String(
+      bus.driver_name ?? (locale === 'th' ? 'ยังไม่ผูกคนขับ' : 'no driver assigned'),
+    );
+    const status = String(bus.service_status ?? '-');
+    const depot = String(bus.depot_name ?? '-');
+
+    return locale === 'th'
+      ? [`ข้อมูลรถ ${vehicle}`, `ทะเบียน ${plate}, สาย ${route}, คนขับ ${driver}`, `สถานะ ${status}, depot ${depot}`].join('\n')
+      : [`Bus ${vehicle}`, `Plate ${plate}, route ${route}, driver ${driver}`, `Status ${status}, depot ${depot}`].join('\n');
   }
 
   private buildUserContext(userAssistantDto: UserAssistantDto) {
@@ -1184,6 +1616,7 @@ export class AiService {
       direction: bus.direction,
       next_stop_name: bus.next_stop_name,
       eta_to_next_stop_minutes: bus.eta_to_next_stop_minutes,
+      speed_kmh: bus.speed_kmh,
       status: bus.status,
       traffic_level: bus.traffic_level,
       occupancy_level: bus.occupancy_level,
@@ -1563,9 +1996,25 @@ export class AiService {
       },
       get_active_shifts: async () => {
         const shifts = await this.fleetService.getCurrentDriverShifts();
-        return shifts
-          .slice(0, 6)
-          .map((shift) => this.toCompactShift(shift as Record<string, unknown>));
+        const now = Date.now();
+
+        return {
+          total_active_shifts: shifts.length,
+          shifts: shifts.slice(0, 6).map((shift) => {
+            const compactShift = this.toCompactShift(shift as Record<string, unknown>);
+            const shiftEndTime = compactShift.shift_end_at
+              ? new Date(String(compactShift.shift_end_at)).getTime()
+              : Number.NaN;
+
+            return {
+              ...compactShift,
+              ends_within_90_minutes:
+                Number.isFinite(shiftEndTime) &&
+                shiftEndTime > now &&
+                shiftEndTime - now <= 90 * 60 * 1000,
+            };
+          }),
+        };
       },
       get_bus_assignment: async (args) => {
         const bus = await this.fleetService.getBus(String(args.busId));
@@ -1655,15 +2104,40 @@ export class AiService {
             deletedAt: true,
             lastLoginAt: true,
             createdAt: true,
+            premiumSubscription: {
+              select: {
+                status: true,
+                stripePriceId: true,
+                currentPeriodEnd: true,
+              },
+            },
           },
         });
-        const [totalUsers, admins, fleetManagers, activeUsers, deletedUsers] =
+        const now = new Date();
+        const [
+          totalUsers,
+          admins,
+          fleetManagers,
+          activeUsers,
+          disabledUsers,
+          deletedUsers,
+          passwordResetRequired,
+          premiumUsers,
+        ] =
           await Promise.all([
             this.prisma.user.count(),
             this.prisma.user.count({ where: { role: 'ADMIN' } }),
             this.prisma.user.count({ where: { role: 'FLEET' } }),
             this.prisma.user.count({ where: { isActive: true, deletedAt: null } }),
+            this.prisma.user.count({ where: { isActive: false, deletedAt: null } }),
             this.prisma.user.count({ where: { deletedAt: { not: null } } }),
+            this.prisma.user.count({ where: { mustResetPassword: true } }),
+            this.prisma.premiumSubscription.count({
+              where: {
+                status: { in: ['ACTIVE', 'TRIALING'] },
+                OR: [{ currentPeriodEnd: null }, { currentPeriodEnd: { gt: now } }],
+              },
+            }),
           ]);
 
         return {
@@ -1672,7 +2146,10 @@ export class AiService {
             admins,
             fleet_managers: fleetManagers,
             active_users: activeUsers,
+            disabled_users: disabledUsers,
             deleted_users: deletedUsers,
+            password_reset_required: passwordResetRequired,
+            premium_users: premiumUsers,
           },
           users: users.map((user) => ({
             id: user.id,
@@ -1687,6 +2164,14 @@ export class AiService {
             must_reset_password: user.mustResetPassword,
             last_login_at: user.lastLoginAt?.toISOString() ?? null,
             created_at: user.createdAt.toISOString(),
+            premium: user.premiumSubscription
+              ? {
+                  status: user.premiumSubscription.status,
+                  plan: user.premiumSubscription.stripePriceId,
+                  current_period_end:
+                    user.premiumSubscription.currentPeriodEnd?.toISOString() ?? null,
+                }
+              : null,
           })),
         };
       },

@@ -12,6 +12,7 @@ import {
 import { AdminService } from './admin.service';
 import { CreateFleetAccountDto } from './dto/create-fleet-account.dto';
 import { DeleteUserDto } from './dto/delete-user.dto';
+import { GrantPremiumUserDto } from './dto/grant-premium-user.dto';
 import { ResetUserPasswordDto } from './dto/reset-user-password.dto';
 import { UpdateAdminUserDto } from './dto/update-admin-user.dto';
 
@@ -56,6 +57,16 @@ export class AdminController {
     @Headers('x-busbuddy-session-version') actorSessionVersion?: string,
   ) {
     return this.adminService.resetUserPassword(userId, dto, actorUserId, actorSessionVersion);
+  }
+
+  @Post('users/:userId/premium')
+  grantUserPremium(
+    @Param('userId') userId: string,
+    @Body() dto: GrantPremiumUserDto,
+    @Headers('x-busbuddy-user-id') actorUserId?: string,
+    @Headers('x-busbuddy-session-version') actorSessionVersion?: string,
+  ) {
+    return this.adminService.grantUserPremium(userId, dto, actorUserId, actorSessionVersion);
   }
 
   @Post('fleet-accounts')

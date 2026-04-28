@@ -561,6 +561,7 @@ export class BillingService {
           status: PremiumSubscriptionStatus;
           stripeSubscriptionId?: string | null;
           stripePriceId?: string | null;
+          stripeCustomerId?: string | null;
           currentPeriodEnd: Date | null;
           cancelAtPeriodEnd: boolean;
           trialEndsAt: Date | null;
@@ -576,6 +577,7 @@ export class BillingService {
       currentPeriodEnd: subscription?.currentPeriodEnd?.toISOString() ?? null,
       cancelAtPeriodEnd: subscription?.cancelAtPeriodEnd ?? false,
       trialEndsAt: subscription?.trialEndsAt?.toISOString() ?? null,
+      canManageBillingPortal: this.isStripeCustomerId(subscription?.stripeCustomerId),
     };
   }
 
@@ -615,10 +617,15 @@ export class BillingService {
       return null;
     }
 
-    if (
-      subscription.stripePriceId === TOURIST_WEEKLY_PLAN ||
-      subscription.stripeSubscriptionId?.startsWith('weekly_')
-    ) {
+    if (subscription.stripePriceId === TOURIST_WEEKLY_PLAN) {
+      return TOURIST_WEEKLY_PLAN;
+    }
+
+    if (subscription.stripePriceId === MONTHLY_PLAN) {
+      return MONTHLY_PLAN;
+    }
+
+    if (subscription.stripeSubscriptionId?.startsWith('weekly_')) {
       return TOURIST_WEEKLY_PLAN;
     }
 

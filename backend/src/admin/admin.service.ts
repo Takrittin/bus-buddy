@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma, UserRole } from '@prisma/client';
+import { PremiumSubscriptionStatus, Prisma, UserRole } from '@prisma/client';
 import { AiService } from '../ai/ai.service';
 import { requireAdminActor } from '../common/request-actor';
 import { FleetService } from '../fleet/fleet.service';
@@ -15,8 +15,20 @@ import { hashPassword } from '../users/password.util';
 import { AdminAuditService } from './admin-audit.service';
 import { CreateFleetAccountDto } from './dto/create-fleet-account.dto';
 import { DeleteUserDto } from './dto/delete-user.dto';
+import { GrantPremiumUserDto, type PremiumGrantPlan } from './dto/grant-premium-user.dto';
 import { ResetUserPasswordDto } from './dto/reset-user-password.dto';
 import { UpdateAdminUserDto } from './dto/update-admin-user.dto';
+
+const PREMIUM_ACTIVE_STATUSES: PremiumSubscriptionStatus[] = [
+  'ACTIVE',
+  'TRIALING',
+];
+const TOURIST_WEEKLY_PLAN: PremiumGrantPlan = 'tourist_weekly';
+const MONTHLY_PLAN: PremiumGrantPlan = 'monthly';
+const PREMIUM_PLAN_DURATIONS_DAYS: Record<PremiumGrantPlan, number> = {
+  tourist_weekly: 7,
+  monthly: 30,
+};
 
 @Injectable()
 export class AdminService {
@@ -41,6 +53,7 @@ export class AdminService {
           where: { isActive: true },
           select: { id: true },
         },
+        premiumSubscription: true,
       },
       orderBy: [{ createdAt: 'desc' }, { email: 'asc' }],
     });
@@ -119,6 +132,7 @@ export class AdminService {
           where: { isActive: true },
           select: { id: true },
         },
+        premiumSubscription: true,
       },
     });
 
@@ -189,6 +203,126 @@ export class AdminService {
     });
 
     return { success: true };
+  }
+
+  async grantUserPremium(
+    userId: string,
+    dto: GrantPremiumUserDto,
+    actorUserId?: string | null,
+    actorSessionVersion?: string | null,
+  ) {
+    const actor = await requireAdminActor(this.prisma, actorUserId, actorSessionVersion);
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { premiumSubscription: true },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found.');
+    }
+
+    if (user.deletedAt) {
+      throw new BadRequestException('Restore deleted users before granting Premium.');
+    }
+
+    if (!user.isActive) {
+      throw new BadRequestException('Activate this account before granting Premium.');
+    }
+
+    if (user.role !== UserRole.USER) {
+      throw new BadRequestException('Premium can only be granted to rider user accounts.');
+    }
+
+    const plan = this.normalizePremiumGrantPlan(dto.plan);
+    const now = new Date();
+    const existingSubscription = user.premiumSubscription;
+    const baseStart =
+      existingSubscription?.currentPeriodEnd &&
+      existingSubscription.currentPeriodEnd.getTime() > now.getTime()
+        ? existingSubscription.currentPeriodEnd
+        : now;
+    const currentPeriodEnd = new Date(
+      baseStart.getTime() + PREMIUM_PLAN_DURATIONS_DAYS[plan] * 24 * 60 * 60 * 1000,
+    );
+    const manualCustomerId =
+      existingSubscription?.stripeCustomerId ??
+      user.stripeCustomerId ??
+      this.getManualPremiumCustomerId(user.id);
+    const existingSubscriptionId = existingSubscription?.stripeSubscriptionId;
+    const manualSubscriptionId =
+      existingSubscriptionId && !existingSubscriptionId.startsWith('qr_')
+        ? existingSubscriptionId
+        : this.getManualPremiumSubscriptionId(user.id);
+
+    await this.prisma.premiumSubscription.upsert({
+      where: { userId: user.id },
+      update: {
+        stripeCustomerId: manualCustomerId,
+        stripeSubscriptionId: manualSubscriptionId,
+        stripePriceId: plan,
+        status: 'ACTIVE',
+        currentPeriodStart: now,
+        currentPeriodEnd,
+        trialEndsAt: null,
+        cancelAtPeriodEnd: false,
+        canceledAt: null,
+        latestInvoiceId: 'admin_manual',
+        latestPaymentStatus: 'admin_granted',
+      },
+      create: {
+        userId: user.id,
+        stripeCustomerId: manualCustomerId,
+        stripeSubscriptionId: manualSubscriptionId,
+        stripePriceId: plan,
+        status: 'ACTIVE',
+        currentPeriodStart: now,
+        currentPeriodEnd,
+        trialEndsAt: null,
+        cancelAtPeriodEnd: false,
+        canceledAt: null,
+        latestInvoiceId: 'admin_manual',
+        latestPaymentStatus: 'admin_granted',
+      },
+    });
+
+    await this.auditService.log({
+      actorUserId: actor.id,
+      actorEmail: actor.email,
+      action: 'admin.user.premium_granted',
+      targetType: 'user',
+      targetId: user.id,
+      summary: `Granted ${plan} Premium to ${user.email}`,
+      metadata: {
+        before: this.toAdminPremiumResponse(existingSubscription),
+        after: {
+          plan,
+          currentPeriodEnd: currentPeriodEnd.toISOString(),
+          status: 'ACTIVE',
+          source: 'admin_manual',
+        },
+        reason: dto.reason?.trim() || null,
+      } as Prisma.InputJsonValue,
+    });
+
+    const updatedUser = await this.prisma.user.findUnique({
+      where: { id: user.id },
+      include: {
+        favoriteStops: {
+          select: { id: true },
+        },
+        subscriptions: {
+          where: { isActive: true },
+          select: { id: true },
+        },
+        premiumSubscription: true,
+      },
+    });
+
+    if (!updatedUser) {
+      throw new NotFoundException('User not found.');
+    }
+
+    return this.toAdminUserResponse(updatedUser);
   }
 
   async deleteUser(
@@ -269,6 +403,7 @@ export class AdminService {
           where: { isActive: true },
           select: { id: true },
         },
+        premiumSubscription: true,
       },
     });
 
@@ -376,6 +511,14 @@ export class AdminService {
     updatedAt: Date;
     favoriteStops?: Array<{ id: string }>;
     subscriptions?: Array<{ id: string }>;
+    premiumSubscription?: {
+      status: PremiumSubscriptionStatus;
+      stripeSubscriptionId?: string | null;
+      stripePriceId?: string | null;
+      currentPeriodEnd: Date | null;
+      cancelAtPeriodEnd: boolean;
+      trialEndsAt: Date | null;
+    } | null;
   }) {
     return {
       id: user.id,
@@ -391,8 +534,98 @@ export class AdminService {
       deleted_at: user.deletedAt?.toISOString() ?? null,
       favorite_stop_count: user.favoriteStops?.length ?? 0,
       notification_count: user.subscriptions?.length ?? 0,
+      premium: this.toAdminPremiumResponse(user.premiumSubscription ?? null),
       created_at: user.createdAt.toISOString(),
       updated_at: user.updatedAt.toISOString(),
     };
+  }
+
+  private toAdminPremiumResponse(
+    subscription:
+      | {
+          status: PremiumSubscriptionStatus;
+          stripeSubscriptionId?: string | null;
+          stripePriceId?: string | null;
+          currentPeriodEnd: Date | null;
+          cancelAtPeriodEnd: boolean;
+          trialEndsAt: Date | null;
+        }
+      | null,
+  ) {
+    return {
+      is_premium: this.isPremiumSubscription(subscription),
+      status: subscription?.status ?? null,
+      plan: this.getPremiumPlan(subscription),
+      current_period_end: subscription?.currentPeriodEnd?.toISOString() ?? null,
+      cancel_at_period_end: subscription?.cancelAtPeriodEnd ?? false,
+      trial_ends_at: subscription?.trialEndsAt?.toISOString() ?? null,
+    };
+  }
+
+  private isPremiumSubscription(
+    subscription:
+      | {
+          status: PremiumSubscriptionStatus;
+          stripeSubscriptionId?: string | null;
+          currentPeriodEnd: Date | null;
+        }
+      | null,
+  ) {
+    if (
+      !subscription ||
+      !PREMIUM_ACTIVE_STATUSES.includes(subscription.status) ||
+      subscription.stripeSubscriptionId?.startsWith('qr_')
+    ) {
+      return false;
+    }
+
+    if (!subscription.currentPeriodEnd) {
+      return true;
+    }
+
+    return subscription.currentPeriodEnd.getTime() > Date.now();
+  }
+
+  private getPremiumPlan(
+    subscription:
+      | {
+          stripeSubscriptionId?: string | null;
+          stripePriceId?: string | null;
+        }
+      | null,
+  ): PremiumGrantPlan | 'unknown' | null {
+    if (!subscription) {
+      return null;
+    }
+
+    if (subscription.stripePriceId === TOURIST_WEEKLY_PLAN) {
+      return TOURIST_WEEKLY_PLAN;
+    }
+
+    if (subscription.stripePriceId === MONTHLY_PLAN) {
+      return MONTHLY_PLAN;
+    }
+
+    if (subscription.stripeSubscriptionId?.startsWith('weekly_')) {
+      return TOURIST_WEEKLY_PLAN;
+    }
+
+    if (subscription.stripeSubscriptionId?.startsWith('sub_')) {
+      return MONTHLY_PLAN;
+    }
+
+    return subscription.stripePriceId ? 'unknown' : null;
+  }
+
+  private normalizePremiumGrantPlan(plan: PremiumGrantPlan) {
+    return plan === TOURIST_WEEKLY_PLAN ? TOURIST_WEEKLY_PLAN : MONTHLY_PLAN;
+  }
+
+  private getManualPremiumCustomerId(userId: string) {
+    return `admin_manual_customer_${userId}`;
+  }
+
+  private getManualPremiumSubscriptionId(userId: string) {
+    return `admin_manual_subscription_${userId}`;
   }
 }

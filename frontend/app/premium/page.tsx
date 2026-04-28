@@ -133,7 +133,7 @@ export default function PremiumPage() {
 
     try {
       const session = billingStatus?.isPremium
-        ? billingStatus.plan === "monthly"
+        ? billingStatus.plan === "monthly" && billingStatus.canManageBillingPortal
           ? await createCustomerPortalSession()
           : null
         : await createPremiumCheckoutSession(plan);
@@ -171,7 +171,10 @@ export default function PremiumPage() {
       );
     }
 
-    if (isCurrentPlan && plan === "tourist_weekly") {
+    if (
+      isCurrentPlan &&
+      (plan === "tourist_weekly" || !billingStatus?.canManageBillingPortal)
+    ) {
       return (
         <Button
           type="button"

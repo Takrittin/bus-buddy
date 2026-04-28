@@ -157,7 +157,7 @@ export function FleetAssistantPanel({
                 key={`${message.role}-${index}`}
                 className={`max-w-[88%] rounded-2xl px-4 py-3 text-sm leading-6 ${
                   message.role === "assistant"
-                    ? "bg-gray-100 text-gray-800"
+                    ? "whitespace-pre-line bg-gray-100 text-gray-800"
                     : "ml-auto bg-brand text-white"
                 }`}
               >

@@ -1,4 +1,14 @@
 import { UserRole } from "@/types/auth";
+import { PremiumPlan, PremiumSubscriptionStatus } from "@/types/billing";
+
+export interface AdminUserPremium {
+  isPremium: boolean;
+  status: PremiumSubscriptionStatus | null;
+  plan: PremiumPlan | null;
+  currentPeriodEnd: string | null;
+  cancelAtPeriodEnd: boolean;
+  trialEndsAt: string | null;
+}
 
 export interface AdminUserRecord {
   id: string;
@@ -14,6 +24,7 @@ export interface AdminUserRecord {
   deletedAt?: string | null;
   favoriteStopCount: number;
   notificationCount: number;
+  premium: AdminUserPremium;
   createdAt: string;
   updatedAt: string;
 }
@@ -35,6 +46,11 @@ export interface CreateFleetAccountInput {
   name?: string;
   operatorName?: string;
   depotName?: string;
+}
+
+export interface GrantAdminUserPremiumInput {
+  plan: "tourist_weekly" | "monthly";
+  reason?: string;
 }
 
 export interface SystemHealthSnapshot {
